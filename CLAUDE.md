@@ -28,7 +28,8 @@ Phase 2 (voice in-app — push-to-talk over `/api/stt/transcribe` and
 
 - Kotlin 2.0.21 + Jetpack Compose (Material 3)
 - AGP 8.7.3, Gradle 8.10.2, JDK 17 (Eclipse Temurin)
-- minSdk 29 / target 35 — earliest reliable `VoiceInteractionService`
+- minSdk 31 / target 35 — Android 12+, lets `AudioManager.setCommunicationDevice()`
+  be the only BT mic routing path (no `startBluetoothSco` fallback)
 - OkHttp 4.12 + kotlinx-serialization-json 1.7.3
 - Navigation Compose 2.8.4 — three routes: `settings` / `history` /
   `chat?sessionId={sessionId}`
@@ -51,7 +52,7 @@ script discovers it via mDNS so most days you never touch IPs.
 source scripts/adb-env.sh        # PATHs + mDNS-discover + adb connect
 ./gradlew installDebug           # build + push to phone in one step
 adb shell am start -n ai.havencore.companion/.MainActivity
-adb logcat | grep -i 'havencore\|ChatWs\|ChatVM'   # tail logs (Phase 1 tags)
+adb logcat | grep -i 'havencore\|ChatWs\|ChatVM\|MicRec\|TtsPlay\|VoiceVM'   # tail logs
 ```
 
 Override discovery if mDNS is blocked: `PHONE_HOST=10.0.0.115:39961 source scripts/adb-env.sh`.
