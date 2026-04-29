@@ -48,6 +48,7 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
     val ping by vm.ping.collectAsState()
     val ttsTest by vm.ttsTest.collectAsState()
     val micTest by vm.micTest.collectAsState()
+    val playTest by vm.playTest.collectAsState()
     val ctx = LocalContext.current
 
     val voicePermLauncher = rememberLauncherForActivityResult(
@@ -177,6 +178,13 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
             ) {
                 Text("Test mic 3 s")
             }
+            OutlinedButton(
+                onClick = vm::testPlayTts,
+                enabled = playTest !is PlayTestState.Synthesizing &&
+                    playTest !is PlayTestState.Playing,
+            ) {
+                Text("Test play TTS")
+            }
             when (val s = ttsTest) {
                 TtsTestState.Untested -> {} // no row until first tap
                 TtsTestState.InFlight -> Row(
@@ -210,6 +218,31 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                 )
                 is MicTestState.Err -> Text(
                     "Mic failed: ${s.message}",
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            when (val s = playTest) {
+                PlayTestState.Untested -> {} // no row until first tap
+                PlayTestState.Synthesizing -> Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                    Text("Synthesizing …")
+                }
+                PlayTestState.Playing -> Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                    Text("Playing …")
+                }
+                PlayTestState.Done -> Text(
+                    "Playback finished.",
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                is PlayTestState.Err -> Text(
+                    "Play failed: ${s.message}",
                     color = MaterialTheme.colorScheme.error,
                 )
             }

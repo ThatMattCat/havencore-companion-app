@@ -56,6 +56,7 @@ fun HavenNav(container: AppContainer) {
                             container.api,
                             container.ttsApi,
                             container.mic,
+                            container.ttsPlayer,
                         )
                     }
                 },

@@ -1,6 +1,7 @@
 package ai.havencore.companion.ui.settings
 
 import ai.havencore.companion.audio.MicRecorder
+import ai.havencore.companion.audio.TtsPlayer
 import ai.havencore.companion.data.ServerConfig
 import ai.havencore.companion.data.SettingsRepository
 import ai.havencore.companion.net.ConversationsApi
@@ -12,6 +13,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -39,11 +42,21 @@ sealed interface MicTestState {
     data class Err(val message: String) : MicTestState
 }
 
+// Phase 2 step 4 debug surface; removed in step 6.
+sealed interface PlayTestState {
+    data object Untested : PlayTestState
+    data object Synthesizing : PlayTestState
+    data object Playing : PlayTestState
+    data object Done : PlayTestState
+    data class Err(val message: String) : PlayTestState
+}
+
 class SettingsViewModel(
     private val repo: SettingsRepository,
     private val api: ConversationsApi,
     private val ttsApi: TtsApi,
     private val mic: MicRecorder,
+    private val ttsPlayer: TtsPlayer,
 ) : ViewModel() {
 
     val config: StateFlow<ServerConfig> =
@@ -61,6 +74,30 @@ class SettingsViewModel(
 
     private val _micTest = MutableStateFlow<MicTestState>(MicTestState.Untested)
     val micTest: StateFlow<MicTestState> = _micTest.asStateFlow()
+
+    private val _playTest = MutableStateFlow<PlayTestState>(PlayTestState.Untested)
+    val playTest: StateFlow<PlayTestState> = _playTest.asStateFlow()
+
+    init {
+        // Mirror player transitions into the debug surface so the UI shows
+        // Playing → Done without us threading state through manually.
+        ttsPlayer.state.onEach { s ->
+            when (s) {
+                TtsPlayer.State.Playing -> _playTest.value = PlayTestState.Playing
+                TtsPlayer.State.Idle -> {
+                    if (_playTest.value is PlayTestState.Playing) {
+                        _playTest.value = PlayTestState.Done
+                    }
+                }
+                is TtsPlayer.State.Error -> {
+                    _playTest.value = PlayTestState.Err(
+                        s.cause.message ?: s.cause::class.simpleName ?: "playback error",
+                    )
+                }
+                TtsPlayer.State.Loading -> {} // driven by play() entry
+            }
+        }.launchIn(viewModelScope)
+    }
 
     fun save(baseUrl: String, deviceName: String) {
         viewModelScope.launch {
@@ -82,6 +119,29 @@ class SettingsViewModel(
                 onSuccess = { PingState.Ok(it) },
                 onFailure = {
                     PingState.Err(it.message ?: it::class.simpleName ?: "Unknown error")
+                },
+            )
+        }
+    }
+
+    fun testPlayTts() {
+        val url = config.value.baseUrl
+        if (url.isBlank()) {
+            _playTest.value = PlayTestState.Err("Save a server URL first")
+            return
+        }
+        _playTest.value = PlayTestState.Synthesizing
+        viewModelScope.launch {
+            val result = ttsApi.speak(url, "hello from havencore companion")
+            result.fold(
+                onSuccess = { spoken ->
+                    ttsPlayer.play(spoken.bytes, spoken.contentType)
+                    // PlayTestState.Playing / Done is set by the ttsPlayer.state observer.
+                },
+                onFailure = { t ->
+                    _playTest.value = PlayTestState.Err(
+                        t.message ?: t::class.simpleName ?: "Unknown error",
+                    )
                 },
             )
         }

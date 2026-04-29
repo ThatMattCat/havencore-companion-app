@@ -1,6 +1,7 @@
 package ai.havencore.companion
 
 import ai.havencore.companion.audio.MicRecorder
+import ai.havencore.companion.audio.TtsPlayer
 import ai.havencore.companion.data.SettingsRepository
 import ai.havencore.companion.net.ChatApi
 import ai.havencore.companion.net.ChatWsSession
@@ -30,4 +31,5 @@ class AppContainer(ctx: Context) {
     val sttApi = SttApi(http)
     val ttsApi = TtsApi(http)
     val mic = MicRecorder(ctx)
+    val ttsPlayer = TtsPlayer(ctx)
 }
