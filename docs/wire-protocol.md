@@ -91,6 +91,34 @@ session_id tap to resume the right one.
 the Phase 1 plan's verification step implied. Test the renderer
 organically or by spoofing a frame.
 
+## STT / TTS
+
+### `POST /api/stt/transcribe`
+
+Multipart upload, field name `file`, optional `language` and
+`response_format` form fields. Proxies the bytes to the upstream
+Whisper service; accepts WAV, MP3, M4A (AAC-in-MP4), FLAC, OGG, and
+WebM/Opus. Returns `{"text": "...", "language": "..."}`.
+
+**Whisper hallucinates on silent / very short clips.** A recording with
+no real speech does not produce empty `text` — it produces a confident
+fake string drawn from common YouTube subtitle credits ("Thank you",
+"Thanks for watching", "Subtitles by ..."). The companion app's
+empty-text branch only catches the rarer truly-empty response. Real
+fix is client-side gating: drop sends below ~600 ms or below an RMS
+energy threshold before even hitting STT. Tracked in
+`ChatViewModel.transcribeAndSend`'s TODO; for v1 the user can ignore
+or clear the phantom turn manually.
+
+### `POST /api/tts/speak`
+
+JSON body `{ text, voice?, format?, speed?, model? }`; defaults
+`voice="af_heart"`, `format="mp3"`, `speed=1.0`, `model="tts-1"`.
+Returns the audio blob with the **upstream's** Content-Type — libsndfile
+may silently downgrade an unsupported requested format (e.g. mp3) to
+WAV, so the response header is the source of truth, not the requested
+`format`. Empty/whitespace text rejected with 400.
+
 ## Auth and transport
 
 CORS is `*` and there is no auth middleware on `/api/*` or the WS. App

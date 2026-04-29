@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -19,6 +20,7 @@ class SettingsRepository(context: Context) {
     private val keyBaseUrl = stringPreferencesKey("base_url")
     private val keyDeviceName = stringPreferencesKey("device_name")
     private val keyLastSessionId = stringPreferencesKey("last_session_id")
+    private val keyAutoSpeak = booleanPreferencesKey("auto_speak")
 
     val configFlow: Flow<ServerConfig> = store.data.map { prefs ->
         ServerConfig(
@@ -49,5 +51,11 @@ class SettingsRepository(context: Context) {
                 prefs[keyLastSessionId] = sid
             }
         }
+    }
+
+    val autoSpeakFlow: Flow<Boolean> = store.data.map { prefs -> prefs[keyAutoSpeak] ?: false }
+
+    suspend fun setAutoSpeak(on: Boolean) {
+        store.edit { prefs -> prefs[keyAutoSpeak] = on }
     }
 }

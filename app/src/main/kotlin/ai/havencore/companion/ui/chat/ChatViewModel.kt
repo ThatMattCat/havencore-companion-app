@@ -79,6 +79,12 @@ class ChatViewModel(
             }
         }.launchIn(viewModelScope)
 
+        // Hydrate the persisted auto-speak preference; subsequent toggles
+        // write through to DataStore.
+        settings.autoSpeakFlow.onEach { on ->
+            if (_state.value.autoSpeak != on) _state.update { it.copy(autoSpeak = on) }
+        }.launchIn(viewModelScope)
+
         runSession()
     }
 
@@ -191,7 +197,9 @@ class ChatViewModel(
     }
 
     fun toggleAutoSpeak() {
-        _state.update { it.copy(autoSpeak = !it.autoSpeak) }
+        val next = !_state.value.autoSpeak
+        _state.update { it.copy(autoSpeak = next) }
+        viewModelScope.launch { settings.setAutoSpeak(next) }
     }
 
     fun dismissVoiceError() {
@@ -221,6 +229,15 @@ class ChatViewModel(
             val result = sttApi.transcribe(cfg.baseUrl, file)
             result.fold(
                 onSuccess = { text ->
+                    // KNOWN ISSUE: Whisper hallucinates plausible text on
+                    // silent / very short input ("Thank you", "Thanks for
+                    // watching", subtitle credits). The empty-text branch
+                    // here only catches the rarer truly-empty response. A
+                    // proper fix is client-side gating: drop sends where
+                    // the recording is shorter than ~600 ms or below an
+                    // RMS energy threshold. Tracked as a follow-up; for
+                    // now an accidental tap-tap may surface a phantom
+                    // turn that the user can ignore or reset.
                     if (text.isBlank()) {
                         setVoiceError("No speech detected")
                         setVoice(VoiceUi.Idle)
