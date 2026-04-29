@@ -91,6 +91,12 @@ class ChatViewModel(
         runSession()
     }
 
+    val assistPromptSeenFlow = settings.defaultAssistantPromptSeenFlow
+
+    fun markAssistPromptSeen() {
+        viewModelScope.launch { settings.setDefaultAssistantPromptSeen(true) }
+    }
+
     private fun runSession() {
         viewModelScope.launch {
             val cfg = settings.configFlow.first()
