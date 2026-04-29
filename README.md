@@ -32,32 +32,67 @@ Master plan + architecture decisions live alongside the agent code.
 
 ## Build
 
-Open the project in **Android Studio Hedgehog or newer** (it ships JDK 17 and
-the Android SDK). Gradle sync downloads everything else.
+Standard Android: open in **Android Studio Hedgehog or newer** (ships JDK 17
+and SDK), or `./gradlew assembleDebug` with `JAVA_HOME` (JDK 17) and
+`ANDROID_HOME` set. Output APK lands at
+`app/build/outputs/apk/debug/app-debug.apk`.
 
-Or from the command line, with `JAVA_HOME` pointing at JDK 17 and
-`ANDROID_HOME` set:
+## Day-to-day dev loop — Wireless ADB from a Linux build host
+
+The primary workflow: build on a Linux server, push to the phone over
+Wireless ADB on the LAN. `scripts/adb-env.sh` handles environment setup and
+phone discovery; source it once per shell.
+
+### One-time pairing (Android 11+)
+
+1. Phone → Settings → Developer options → **Wireless debugging** → On
+2. Tap **Pair device with pairing code** (the modal — _not_ the main screen's
+   IP & Port; those are different). Note the pair `host:port` and 6-digit
+   code.
+3. From the build host:
+   ```bash
+   adb pair <pair-host:port>   # then enter the 6-digit code
+   ```
+
+Pairing persists across phone reboots; you only repeat it if the phone is
+wiped or the server's adb keys change.
+
+### Each shell session
 
 ```bash
-./gradlew assembleDebug
+source scripts/adb-env.sh                                     # PATHs + mDNS-discover + adb connect
+./gradlew installDebug                                        # build + push to phone
+adb shell am start -n ai.havencore.companion/.MainActivity    # launch
+adb logcat | grep -i havencore                                # tail logs
 ```
 
-Output APK: `app/build/outputs/apk/debug/app-debug.apk`.
-
-## Install + run
+The phone's _connect_ port (separate from the pair port) rotates every time
+Wireless debugging is toggled or the phone reboots. The helper script
+auto-discovers it via mDNS — no need to hardcode. If mDNS is blocked on your
+network, override:
 
 ```bash
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+PHONE_HOST=10.0.0.115:39961 source scripts/adb-env.sh
 ```
 
-1. Open the app.
-2. Enter your HavenCore agent's URL (e.g. `http://havencore.local`,
-   `http://192.168.1.20`, or whatever your nginx gateway publishes).
-3. Optionally edit the device name (defaults to `Build.MODEL`).
-4. Tap **Save**.
-5. Tap **Test connection** — expect "Connected." with a conversation count.
-   On failure, the error string surfaces (timeout / refused / unknown host /
-   HTTP code).
+### Build host toolchain
+
+The helper script assumes:
+- JDK 17 at `/home/matt/.local/jdk/jdk-17.0.19+10`
+- Android SDK at `/home/matt/.local/android-sdk` (platform-tools,
+  `platforms;android-35`, `build-tools;35.0.0`)
+- Gradle 8.10.2 (also fetched by the wrapper)
+
+Adjust paths in `scripts/adb-env.sh` if your install lives elsewhere.
+
+## In-app
+
+1. Enter your HavenCore agent URL (e.g. `http://havencore.local`,
+   `http://10.0.0.20`, or whatever the nginx gateway publishes).
+2. Optionally edit the device name (defaults to `Build.MODEL`).
+3. Tap **Save** → tap **Test connection**.
+4. Expect "Connected." with a conversation count. On failure the error
+   string surfaces (timeout / refused / unknown host / HTTP code).
 
 ## Configuration
 
