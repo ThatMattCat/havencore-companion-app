@@ -26,13 +26,7 @@ acceptance plan at
 
 Phase 3 (default-assistant slot — `VoiceInteractionService` for the
 long-press home / power slot, lockscreen, and Assist intent) is the
-next phase.
-
-Known issue carried into Phase 3: STT (Whisper) hallucinates plausible
-text on silent / very short clips ("Thank you", subtitle credits) — see
-`docs/wire-protocol.md` and the TODO in
-`ChatViewModel.transcribeAndSend`. The fix is client-side gating
-(duration + RMS energy threshold) before hitting STT.
+next phase. Plan at `/home/matt/.claude/plans/i-want-to-rosy-finch.md`.
 
 ## Stack
 

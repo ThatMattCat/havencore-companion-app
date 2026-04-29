@@ -8,12 +8,20 @@ import android.media.AudioManager
 import android.media.MediaRecorder
 import android.util.Log
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * AAC-in-MP4 capture via MediaRecorder. Records mono / 16 kHz / 32 kbps from
@@ -24,13 +32,25 @@ import java.io.File
  * the headset mic via [AudioManager.setCommunicationDevice] when the headset
  * exposes a TYPE_BLUETOOTH_SCO communication device. Routing is best-effort:
  * any failure logs and falls back to the built-in mic.
+ *
+ * Tracks peak amplitude during capture via [MediaRecorder.getMaxAmplitude] so
+ * callers can gate uploads on [State.Stopped.hasSpeech] before hitting STT —
+ * Whisper hallucinates plausible subtitle-credit text on silence, so the
+ * client filters silent / very short clips before they ever leave the device.
  */
 class MicRecorder(private val ctx: Context) {
 
     sealed interface State {
         data object Idle : State
         data object Recording : State
-        data class Stopped(val file: File, val durationMs: Long) : State
+        data class Stopped(
+            val file: File,
+            val durationMs: Long,
+            val peakAmplitude: Int,
+        ) : State {
+            fun hasSpeech(): Boolean =
+                durationMs >= MIN_DURATION_MS && peakAmplitude >= MIN_PEAK_AMPLITUDE
+        }
         data class Error(val cause: Throwable) : State
     }
 
@@ -39,6 +59,10 @@ class MicRecorder(private val ctx: Context) {
 
     private val audioManager: AudioManager =
         ctx.getSystemService(AudioManager::class.java)
+
+    private val pollScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var pollJob: Job? = null
+    private val peakAmplitude = AtomicInteger(0)
 
     private var recorder: MediaRecorder? = null
     private var currentFile: File? = null
@@ -75,11 +99,13 @@ class MicRecorder(private val ctx: Context) {
             }
             recorder = rec
             startedAt = System.currentTimeMillis()
+            startAmplitudePoll(rec)
             _state.value = State.Recording
             Log.i(TAG, "started → ${file.absolutePath}")
             Unit
         }.onFailure { t ->
             Log.w(TAG, "start failed", t)
+            stopAmplitudePoll()
             cleanup(deleteFile = true)
             _state.value = State.Error(t)
         }
@@ -88,6 +114,11 @@ class MicRecorder(private val ctx: Context) {
     suspend fun stop(): Result<File> = withContext(Dispatchers.IO) {
         val rec = recorder ?: return@withContext Result.failure(IllegalStateException("not recording"))
         val file = currentFile ?: return@withContext Result.failure(IllegalStateException("no output file"))
+        // Cancel the poller before stopping the recorder — getMaxAmplitude on
+        // a stopped MediaRecorder throws IllegalStateException.
+        pollJob?.cancelAndJoin()
+        pollJob = null
+        val peak = peakAmplitude.getAndSet(0)
         runCatching {
             rec.stop()
             rec.release()
@@ -96,8 +127,8 @@ class MicRecorder(private val ctx: Context) {
             val durationMs = System.currentTimeMillis() - startedAt
             currentFile = null
             startedAt = 0L
-            _state.value = State.Stopped(file, durationMs)
-            Log.i(TAG, "stopped len=${file.length()} bytes durMs=$durationMs")
+            _state.value = State.Stopped(file, durationMs, peak)
+            Log.i(TAG, "stopped len=${file.length()} bytes durMs=$durationMs peak=$peak")
             file
         }.onFailure { t ->
             Log.w(TAG, "stop failed", t)
@@ -107,6 +138,9 @@ class MicRecorder(private val ctx: Context) {
     }
 
     fun cancel() {
+        pollJob?.cancel()
+        pollJob = null
+        peakAmplitude.set(0)
         val rec = recorder
         if (rec != null) {
             runCatching { rec.stop() }
@@ -114,6 +148,25 @@ class MicRecorder(private val ctx: Context) {
         }
         cleanup(deleteFile = true)
         _state.value = State.Idle
+    }
+
+    private fun startAmplitudePoll(rec: MediaRecorder) {
+        peakAmplitude.set(0)
+        // Documented behavior: the first call after start() returns 0 — discard.
+        runCatching { rec.maxAmplitude }
+        pollJob = pollScope.launch {
+            while (isActive) {
+                delay(POLL_INTERVAL_MS)
+                val cur = runCatching { rec.maxAmplitude }.getOrDefault(0)
+                if (cur > peakAmplitude.get()) peakAmplitude.set(cur)
+            }
+        }
+    }
+
+    private fun stopAmplitudePoll() {
+        pollJob?.cancel()
+        pollJob = null
+        peakAmplitude.set(0)
     }
 
     private fun cleanup(deleteFile: Boolean) {
@@ -173,5 +226,10 @@ class MicRecorder(private val ctx: Context) {
     private companion object {
         const val TAG = "MicRec"
         const val ONE_HOUR_MS = 60L * 60L * 1000L
+        const val MIN_DURATION_MS = 600L
+        // Calibrated 2026-04-29 against ambient room noise; tune per the
+        // verify step if quiet speech is being false-gated.
+        const val MIN_PEAK_AMPLITUDE = 800
+        const val POLL_INTERVAL_MS = 100L
     }
 }

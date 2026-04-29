@@ -21,7 +21,6 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
-import java.io.File
 
 class ChatViewModel(
     private val settings: SettingsRepository,
@@ -50,7 +49,7 @@ class ChatViewModel(
                 MicRecorder.State.Recording -> setVoice(VoiceUi.Recording)
                 is MicRecorder.State.Stopped -> {
                     setVoice(VoiceUi.Transcribing)
-                    transcribeAndSend(s.file)
+                    transcribeAndSend(s)
                 }
                 is MicRecorder.State.Error -> {
                     setVoiceError(s.cause.message ?: "mic error")
@@ -223,21 +222,17 @@ class ChatViewModel(
         _state.update { it.copy(voiceError = msg) }
     }
 
-    private fun transcribeAndSend(file: File) {
+    private fun transcribeAndSend(stopped: MicRecorder.State.Stopped) {
+        if (!stopped.hasSpeech()) {
+            setVoiceError("No speech detected")
+            setVoice(VoiceUi.Idle)
+            return
+        }
         viewModelScope.launch {
             val cfg = settings.configFlow.first()
-            val result = sttApi.transcribe(cfg.baseUrl, file)
+            val result = sttApi.transcribe(cfg.baseUrl, stopped.file)
             result.fold(
                 onSuccess = { text ->
-                    // KNOWN ISSUE: Whisper hallucinates plausible text on
-                    // silent / very short input ("Thank you", "Thanks for
-                    // watching", subtitle credits). The empty-text branch
-                    // here only catches the rarer truly-empty response. A
-                    // proper fix is client-side gating: drop sends where
-                    // the recording is shorter than ~600 ms or below an
-                    // RMS energy threshold. Tracked as a follow-up; for
-                    // now an accidental tap-tap may surface a phantom
-                    // turn that the user can ignore or reset.
                     if (text.isBlank()) {
                         setVoiceError("No speech detected")
                         setVoice(VoiceUi.Idle)

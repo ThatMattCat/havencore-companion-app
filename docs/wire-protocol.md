@@ -103,12 +103,14 @@ WebM/Opus. Returns `{"text": "...", "language": "..."}`.
 **Whisper hallucinates on silent / very short clips.** A recording with
 no real speech does not produce empty `text` — it produces a confident
 fake string drawn from common YouTube subtitle credits ("Thank you",
-"Thanks for watching", "Subtitles by ..."). The companion app's
-empty-text branch only catches the rarer truly-empty response. Real
-fix is client-side gating: drop sends below ~600 ms or below an RMS
-energy threshold before even hitting STT. Tracked in
-`ChatViewModel.transcribeAndSend`'s TODO; for v1 the user can ignore
-or clear the phantom turn manually.
+"Thanks for watching", "Subtitles by ..."). The empty-text response is
+rarer than the hallucinated one. Client-side gating lives in
+`MicRecorder.State.Stopped.hasSpeech()` (duration ≥ `MIN_DURATION_MS`
+**and** peak amplitude ≥ `MIN_PEAK_AMPLITUDE` from `getMaxAmplitude()`
+polling); both `ChatViewModel.transcribeAndSend` and the assist path
+call it before invoking `SttApi.transcribe`. Re-calibrate
+`MIN_PEAK_AMPLITUDE` against ambient noise if quiet speech is being
+false-gated.
 
 ### `POST /api/tts/speak`
 
