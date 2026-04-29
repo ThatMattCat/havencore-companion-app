@@ -3,8 +3,11 @@ package ai.havencore.companion.voice
 import ai.havencore.companion.HavenCoreApp
 import ai.havencore.companion.MainActivity
 import ai.havencore.companion.audio.MicRecorder
+import ai.havencore.companion.audio.TtsPlayer
 import ai.havencore.companion.data.ServerConfig
+import ai.havencore.companion.net.ChatEvent
 import ai.havencore.companion.net.ChatWsSession
+import ai.havencore.companion.net.ParsedFrame
 import ai.havencore.companion.ui.theme.HavenCoreTheme
 import android.Manifest
 import android.content.Context
@@ -29,23 +32,27 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
- * Per-invocation overlay session. Orchestrates one round of
- * mic capture → STT, with Compose rendering driven from a
- * `MutableStateFlow<AssistUiState>`. The full WS round-trip + TTS
- * lands in commit #7; for now we render the captured transcript and
- * leave the assistant work for the next commit.
+ * Per-invocation overlay session orchestrating the full round-trip:
+ * RECORD_AUDIO gate → settings → WS connect (fresh ChatWsSession sharing
+ * the OkHttp client, bound to lastSessionId) → mic capture under
+ * Phase.Listening (user-stopped via the overlay's Stop button) →
+ * MicRecorder.State.Stopped.hasSpeech() gate → STT →
+ * `ws.send(transcript)` → reduce inbound frames into Phase.Thinking /
+ * tool count chip / Phase.Replying → TtsApi.speak → TtsPlayer.play →
+ * 1.5 s grace after audio ends → finish().
  *
- * The session reuses the foreground app's [HavenCoreApp.container] —
- * shared `MicRecorder`, `SttApi`, and OkHttp client — but constructs
- * its own [ChatWsSession] so an active foreground chat WS is not
- * disturbed. Both sockets bind to the same `lastSessionId` so voice
- * turns from any entry point land in the same History row.
+ * Reuses the foreground app's [HavenCoreApp.container] (shared
+ * MicRecorder, TtsPlayer, OkHttp client) but constructs its own
+ * [ChatWsSession] so an active foreground chat WS is not disturbed.
+ * Both sockets bind to the same lastSessionId so voice turns from any
+ * entry point land in the same History row.
  */
 class HavenAssistSession(context: Context) : VoiceInteractionSession(context) {
 
@@ -55,6 +62,7 @@ class HavenAssistSession(context: Context) : VoiceInteractionSession(context) {
     private val ws by lazy { ChatWsSession(app.http) }
 
     private lateinit var lifecycleOwner: AssistLifecycleOwner
+    private lateinit var cfg: ServerConfig
 
     override fun onCreate() {
         super.onCreate()
@@ -136,7 +144,7 @@ class HavenAssistSession(context: Context) : VoiceInteractionSession(context) {
             }
 
             // 2. Read settings — baseUrl + deviceName + lastSessionId.
-            val cfg: ServerConfig = app.settings.configFlow.first()
+            cfg = app.settings.configFlow.first()
             val sid = app.settings.lastSessionId()
             if (cfg.baseUrl.isBlank()) {
                 Log.w(TAG, "baseUrl is blank — bailing")
@@ -151,18 +159,19 @@ class HavenAssistSession(context: Context) : VoiceInteractionSession(context) {
                 return@launch
             }
 
-            // 3. Open the WS now so the round-trip in commit #7 has a
-            //    connected socket the moment the user releases the mic.
-            //    For commit #6 we just need the Connected handshake — we
-            //    don't reduce inbound frames yet.
+            // 3. Open the WS, kick off frame consumer immediately, then
+            //    block on Connected before starting mic.
             state.update { it.copy(phase = Phase.Connecting) }
-            ws.connect(
+            val frames = ws.connect(
                 scope = sessionScope,
                 baseUrl = cfg.baseUrl,
                 sessionId = sid,
                 deviceName = cfg.deviceName,
                 idleTimeout = -1,
             )
+            sessionScope.launch {
+                frames.collect { frame -> reduce(frame) }
+            }
             ws.status.filterIsInstance<ChatWsSession.Status.Connected>().first()
 
             // 4. Reset the shared MicRecorder so a stale Stopped from a
@@ -184,7 +193,7 @@ class HavenAssistSession(context: Context) : VoiceInteractionSession(context) {
             val stopped = app.mic.state
                 .filterIsInstance<MicRecorder.State.Stopped>()
                 .first()
-            onMicStopped(stopped, cfg)
+            onMicStopped(stopped)
         }
     }
 
@@ -196,10 +205,7 @@ class HavenAssistSession(context: Context) : VoiceInteractionSession(context) {
         }
     }
 
-    private suspend fun onMicStopped(
-        stopped: MicRecorder.State.Stopped,
-        cfg: ServerConfig,
-    ) {
+    private suspend fun onMicStopped(stopped: MicRecorder.State.Stopped) {
         if (!stopped.hasSpeech()) {
             Log.i(TAG, "no speech detected (durMs=${stopped.durationMs} peak=${stopped.peakAmplitude})")
             state.update { it.copy(phase = Phase.NoSpeech) }
@@ -223,12 +229,76 @@ class HavenAssistSession(context: Context) : VoiceInteractionSession(context) {
             finish()
             return
         }
-        // Commit #6 stops here — render the transcript bubble under a
-        // "Thinking…" spinner. Commit #7 will send it over the WS and
-        // resolve into a real reply / TTS playback.
-        state.update {
-            it.copy(phase = Phase.Thinking, transcript = transcript)
+        state.update { it.copy(phase = Phase.Thinking, transcript = transcript) }
+        if (!ws.send(transcript)) {
+            Log.w(TAG, "ws.send returned false — socket gone")
+            state.update { it.copy(phase = Phase.Error, errorMessage = "Not connected") }
+            delay(2_500)
+            finish()
+            return
         }
+        // From here, the reducer drives state — Done triggers speakAndFinish.
+    }
+
+    private fun reduce(frame: ParsedFrame) {
+        when (frame) {
+            is ParsedFrame.Known -> when (val ev = frame.event) {
+                is ChatEvent.Session -> {
+                    // Persist for cross-invocation continuity (matches
+                    // ChatViewModel's path).
+                    sessionScope.launch { app.settings.setLastSessionId(ev.session_id) }
+                }
+                is ChatEvent.ToolCall -> {
+                    state.update { it.copy(toolCount = it.toolCount + 1) }
+                }
+                is ChatEvent.Done -> {
+                    state.update { it.copy(phase = Phase.Replying, reply = ev.content) }
+                    sessionScope.launch { speakAndFinish(ev.content) }
+                }
+                is ChatEvent.Err -> {
+                    state.update {
+                        it.copy(phase = Phase.Error, errorMessage = ev.error)
+                    }
+                    sessionScope.launch {
+                        delay(2_500)
+                        finish()
+                    }
+                }
+                is ChatEvent.Thinking,
+                is ChatEvent.ToolResult,
+                is ChatEvent.Reasoning,
+                is ChatEvent.Metric,
+                is ChatEvent.SummaryReset -> {
+                    // Slim overlay: thinking spinner is already showing,
+                    // tool-result expanders / reasoning / metrics / summary
+                    // resets all live in the chat screen, not here.
+                }
+            }
+            is ParsedFrame.Unknown -> Log.w(TAG, "unknown event type=${frame.type}")
+            is ParsedFrame.Malformed -> Log.w(TAG, "malformed frame: ${frame.cause.message}")
+        }
+    }
+
+    private suspend fun speakAndFinish(text: String) {
+        if (text.isBlank()) {
+            delay(500)
+            finish()
+            return
+        }
+        val spoken = app.ttsApi.speak(cfg.baseUrl, text).getOrNull()
+        if (spoken == null) {
+            Log.w(TAG, "TTS failed; finishing without playback")
+            delay(500)
+            finish()
+            return
+        }
+        app.ttsPlayer.play(spoken.bytes, spoken.contentType)
+        // Wait for the player to leave Loading/Playing (i.e. Idle or Error).
+        app.ttsPlayer.state
+            .filter { it !is TtsPlayer.State.Loading && it !is TtsPlayer.State.Playing }
+            .first()
+        delay(1_500)
+        finish()
     }
 
     private fun hasRecordAudio(): Boolean =
