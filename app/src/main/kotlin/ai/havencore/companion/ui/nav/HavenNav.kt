@@ -51,7 +51,12 @@ fun HavenNav(container: AppContainer) {
             val vm: SettingsViewModel = viewModel(
                 factory = viewModelFactory {
                     initializer {
-                        SettingsViewModel(container.settings, container.api, container.ttsApi)
+                        SettingsViewModel(
+                            container.settings,
+                            container.api,
+                            container.ttsApi,
+                            container.mic,
+                        )
                     }
                 },
             )

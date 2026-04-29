@@ -1,5 +1,9 @@
 package ai.havencore.companion.ui.settings
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,8 +36,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,6 +47,16 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
     val config by vm.config.collectAsState()
     val ping by vm.ping.collectAsState()
     val ttsTest by vm.ttsTest.collectAsState()
+    val micTest by vm.micTest.collectAsState()
+    val ctx = LocalContext.current
+
+    val voicePermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { granted ->
+        if (granted[Manifest.permission.RECORD_AUDIO] == true) {
+            vm.testMic()
+        }
+    }
 
     var baseUrl by rememberSaveable(config.baseUrl) { mutableStateOf(config.baseUrl) }
     var deviceName by rememberSaveable(config.deviceName) { mutableStateOf(config.deviceName) }
@@ -138,6 +154,29 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
             ) {
                 Text("Test TTS")
             }
+            OutlinedButton(
+                onClick = {
+                    val recordOk = ContextCompat.checkSelfPermission(
+                        ctx, Manifest.permission.RECORD_AUDIO,
+                    ) == PackageManager.PERMISSION_GRANTED
+                    val btOk = ContextCompat.checkSelfPermission(
+                        ctx, Manifest.permission.BLUETOOTH_CONNECT,
+                    ) == PackageManager.PERMISSION_GRANTED
+                    if (recordOk && btOk) {
+                        vm.testMic()
+                    } else {
+                        voicePermLauncher.launch(
+                            arrayOf(
+                                Manifest.permission.RECORD_AUDIO,
+                                Manifest.permission.BLUETOOTH_CONNECT,
+                            ),
+                        )
+                    }
+                },
+                enabled = micTest !is MicTestState.Recording,
+            ) {
+                Text("Test mic 3 s")
+            }
             when (val s = ttsTest) {
                 TtsTestState.Untested -> {} // no row until first tap
                 TtsTestState.InFlight -> Row(
@@ -153,6 +192,24 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                 )
                 is TtsTestState.Err -> Text(
                     "TTS failed: ${s.message}",
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            when (val s = micTest) {
+                MicTestState.Untested -> {} // no row until first tap
+                MicTestState.Recording -> Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                    Text("Recording 3 s …")
+                }
+                is MicTestState.Ok -> Text(
+                    "recorded ${s.bytes / 1024} KB at ${s.path.substringAfterLast('/')}",
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                is MicTestState.Err -> Text(
+                    "Mic failed: ${s.message}",
                     color = MaterialTheme.colorScheme.error,
                 )
             }

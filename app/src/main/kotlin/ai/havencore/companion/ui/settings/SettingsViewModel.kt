@@ -1,11 +1,13 @@
 package ai.havencore.companion.ui.settings
 
+import ai.havencore.companion.audio.MicRecorder
 import ai.havencore.companion.data.ServerConfig
 import ai.havencore.companion.data.SettingsRepository
 import ai.havencore.companion.net.ConversationsApi
 import ai.havencore.companion.net.TtsApi
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -29,10 +31,19 @@ sealed interface TtsTestState {
     data class Err(val message: String) : TtsTestState
 }
 
+// Phase 2 step 3 debug surface; removed in step 6.
+sealed interface MicTestState {
+    data object Untested : MicTestState
+    data object Recording : MicTestState
+    data class Ok(val bytes: Long, val path: String) : MicTestState
+    data class Err(val message: String) : MicTestState
+}
+
 class SettingsViewModel(
     private val repo: SettingsRepository,
     private val api: ConversationsApi,
     private val ttsApi: TtsApi,
+    private val mic: MicRecorder,
 ) : ViewModel() {
 
     val config: StateFlow<ServerConfig> =
@@ -47,6 +58,9 @@ class SettingsViewModel(
 
     private val _ttsTest = MutableStateFlow<TtsTestState>(TtsTestState.Untested)
     val ttsTest: StateFlow<TtsTestState> = _ttsTest.asStateFlow()
+
+    private val _micTest = MutableStateFlow<MicTestState>(MicTestState.Untested)
+    val micTest: StateFlow<MicTestState> = _micTest.asStateFlow()
 
     fun save(baseUrl: String, deviceName: String) {
         viewModelScope.launch {
@@ -68,6 +82,27 @@ class SettingsViewModel(
                 onSuccess = { PingState.Ok(it) },
                 onFailure = {
                     PingState.Err(it.message ?: it::class.simpleName ?: "Unknown error")
+                },
+            )
+        }
+    }
+
+    fun testMic() {
+        _micTest.value = MicTestState.Recording
+        viewModelScope.launch {
+            val started = mic.start()
+            if (started.isFailure) {
+                _micTest.value = MicTestState.Err(
+                    started.exceptionOrNull()?.message ?: "start failed",
+                )
+                return@launch
+            }
+            delay(3_000)
+            val stopped = mic.stop()
+            _micTest.value = stopped.fold(
+                onSuccess = { f -> MicTestState.Ok(bytes = f.length(), path = f.absolutePath) },
+                onFailure = {
+                    MicTestState.Err(it.message ?: it::class.simpleName ?: "stop failed")
                 },
             )
         }
