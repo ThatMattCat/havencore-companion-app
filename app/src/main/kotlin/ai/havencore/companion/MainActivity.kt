@@ -1,7 +1,7 @@
 package ai.havencore.companion
 
-import ai.havencore.companion.ui.settings.SettingsScreen
-import ai.havencore.companion.ui.settings.SettingsViewModel
+import ai.havencore.companion.ui.chat.ChatScreen
+import ai.havencore.companion.ui.chat.ChatViewModel
 import ai.havencore.companion.ui.theme.HavenCoreTheme
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -16,20 +16,26 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val app = application as HavenCoreApp
+        // Phase 1 commit 4: hard-coded chat route. Commit 5 replaces this
+        // with HavenNav (history list as start, chat as a route arg).
         val factory = viewModelFactory {
             initializer {
-                SettingsViewModel(
-                    app.container.settings,
-                    app.container.api,
-                    app.container.chatApi,
-                    app.container.ws,
+                ChatViewModel(
+                    settings = app.container.settings,
+                    chatApi = app.container.chatApi,
+                    ws = app.container.ws,
+                    sessionToResume = null,
                 )
             }
         }
-        val vm = ViewModelProvider(this, factory)[SettingsViewModel::class.java]
+        val vm = ViewModelProvider(this, factory)[ChatViewModel::class.java]
         setContent {
             HavenCoreTheme {
-                SettingsScreen(vm)
+                ChatScreen(
+                    vm = vm,
+                    onBack = { /* no-op until commit 5 wires nav */ },
+                    onOpenSettings = { /* no-op until commit 5 wires nav */ },
+                )
             }
         }
     }
