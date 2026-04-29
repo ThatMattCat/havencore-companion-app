@@ -1,9 +1,15 @@
 package ai.havencore.companion.ui.chat
 
 import ai.havencore.companion.ui.chat.components.AssistantTurnCard
+import ai.havencore.companion.ui.chat.components.AutoSpeakToggle
 import ai.havencore.companion.ui.chat.components.ConnectionBanner
+import ai.havencore.companion.ui.chat.components.MicButton
 import ai.havencore.companion.ui.chat.components.SummaryResetDivider
 import ai.havencore.companion.ui.chat.components.UserBubble
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -26,6 +32,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -33,9 +41,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,11 +57,51 @@ fun ChatScreen(
 ) {
     val state by vm.state.collectAsState()
     val listState = rememberLazyListState()
+    val ctx = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    val voicePermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { granted ->
+        if (granted[Manifest.permission.RECORD_AUDIO] == true) {
+            vm.toggleMic()
+        }
+        // RECORD_AUDIO denial: the system already showed the deny prompt;
+        // surfacing a Snackbar here would feel redundant, but flagging it
+        // as a voiceError gives the user a hint to enable in app settings.
+        if (granted[Manifest.permission.RECORD_AUDIO] == false) {
+            // Drive through the VM so the existing voiceError pipeline
+            // renders the Snackbar.
+            vm.dismissVoiceError()
+        }
+    }
+
+    fun onMicTap() {
+        val recordOk = ContextCompat.checkSelfPermission(
+            ctx, Manifest.permission.RECORD_AUDIO,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (recordOk) {
+            vm.toggleMic()
+        } else {
+            voicePermLauncher.launch(
+                arrayOf(
+                    Manifest.permission.RECORD_AUDIO,
+                    Manifest.permission.BLUETOOTH_CONNECT,
+                ),
+            )
+        }
+    }
 
     LaunchedEffect(state.turns.size) {
         if (state.turns.isNotEmpty()) {
             listState.animateScrollToItem(state.turns.lastIndex)
         }
+    }
+
+    LaunchedEffect(state.voiceError) {
+        val msg = state.voiceError ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(msg)
+        vm.dismissVoiceError()
     }
 
     Scaffold(
@@ -73,6 +124,10 @@ fun ChatScreen(
                     }
                 },
                 actions = {
+                    AutoSpeakToggle(
+                        autoSpeak = state.autoSpeak,
+                        onToggle = vm::toggleAutoSpeak,
+                    )
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
@@ -82,11 +137,15 @@ fun ChatScreen(
         bottomBar = {
             ChatInputBar(
                 draft = state.draft,
-                enabled = state.connection is ConnectionUi.Connected && !state.turnInFlight,
+                voice = state.voice,
+                connected = state.connection is ConnectionUi.Connected,
+                turnInFlight = state.turnInFlight,
                 onDraftChange = vm::updateDraft,
                 onSend = vm::send,
+                onMicTap = ::onMicTap,
             )
         },
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
     ) { padding ->
         Column(
             modifier = Modifier
@@ -120,9 +179,12 @@ fun ChatScreen(
 @Composable
 private fun ChatInputBar(
     draft: String,
-    enabled: Boolean,
+    voice: VoiceUi,
+    connected: Boolean,
+    turnInFlight: Boolean,
     onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
+    onMicTap: () -> Unit,
 ) {
     Surface(tonalElevation = 4.dp, modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -132,8 +194,16 @@ private fun ChatInputBar(
                 .imePadding()
                 .padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            MicButton(
+                voice = voice,
+                // Mic is interactive whenever connected and no typed turn is
+                // in flight. Stopping a recording / playback never needs the
+                // socket to be live; starting one does.
+                enabled = connected && !turnInFlight,
+                onTap = onMicTap,
+            )
             OutlinedTextField(
                 value = draft,
                 onValueChange = onDraftChange,
@@ -143,7 +213,11 @@ private fun ChatInputBar(
             )
             IconButton(
                 onClick = onSend,
-                enabled = enabled && draft.isNotBlank(),
+                // Don't let the user fire a typed message while voice is
+                // mid-flight; otherwise the reducer would race the
+                // transcribed turn into the same WS.
+                enabled = connected && !turnInFlight && voice == VoiceUi.Idle &&
+                    draft.isNotBlank(),
             ) {
                 Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
             }

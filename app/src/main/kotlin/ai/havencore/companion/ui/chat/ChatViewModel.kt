@@ -1,10 +1,14 @@
 package ai.havencore.companion.ui.chat
 
+import ai.havencore.companion.audio.MicRecorder
+import ai.havencore.companion.audio.TtsPlayer
 import ai.havencore.companion.data.SettingsRepository
 import ai.havencore.companion.net.ChatApi
 import ai.havencore.companion.net.ChatEvent
 import ai.havencore.companion.net.ChatWsSession
 import ai.havencore.companion.net.ParsedFrame
+import ai.havencore.companion.net.SttApi
+import ai.havencore.companion.net.TtsApi
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -12,14 +16,21 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
+import java.io.File
 
 class ChatViewModel(
     private val settings: SettingsRepository,
     private val chatApi: ChatApi,
     private val ws: ChatWsSession,
+    private val sttApi: SttApi,
+    private val ttsApi: TtsApi,
+    private val mic: MicRecorder,
+    private val ttsPlayer: TtsPlayer,
     private val sessionToResume: String?,
 ) : ViewModel() {
 
@@ -32,6 +43,42 @@ class ChatViewModel(
     private var hasHydrated: Boolean = false
 
     init {
+        // Mic recorder transitions: Recording flips voice; Stopped triggers
+        // transcription; Error surfaces a Snackbar message.
+        mic.state.onEach { s ->
+            when (s) {
+                MicRecorder.State.Recording -> setVoice(VoiceUi.Recording)
+                is MicRecorder.State.Stopped -> {
+                    setVoice(VoiceUi.Transcribing)
+                    transcribeAndSend(s.file)
+                }
+                is MicRecorder.State.Error -> {
+                    setVoiceError(s.cause.message ?: "mic error")
+                    if (_state.value.voice == VoiceUi.Recording) setVoice(VoiceUi.Idle)
+                }
+                MicRecorder.State.Idle -> {
+                    if (_state.value.voice == VoiceUi.Recording) setVoice(VoiceUi.Idle)
+                }
+            }
+        }.launchIn(viewModelScope)
+
+        // Player transitions: Loading/Playing claim the voice indicator;
+        // Idle releases it, but only if we were previously Speaking — so we
+        // don't clobber a Recording state from a stale player Idle event.
+        ttsPlayer.state.onEach { s ->
+            when (s) {
+                TtsPlayer.State.Loading, TtsPlayer.State.Playing ->
+                    setVoice(VoiceUi.Speaking)
+                TtsPlayer.State.Idle -> {
+                    if (_state.value.voice == VoiceUi.Speaking) setVoice(VoiceUi.Idle)
+                }
+                is TtsPlayer.State.Error -> {
+                    setVoiceError(s.cause.message ?: "playback error")
+                    if (_state.value.voice == VoiceUi.Speaking) setVoice(VoiceUi.Idle)
+                }
+            }
+        }.launchIn(viewModelScope)
+
         runSession()
     }
 
@@ -83,14 +130,21 @@ class ChatViewModel(
     fun send() {
         val text = _state.value.draft.trim()
         if (text.isBlank() || _state.value.turnInFlight) return
+        sendMessage(text, fromVoice = false)
+    }
+
+    private fun sendMessage(text: String, fromVoice: Boolean) {
+        if (text.isBlank() || _state.value.turnInFlight) return
 
         // Append user turn + placeholder assistant turn before transmitting.
         _state.update { s ->
             s.copy(
                 turns = s.turns +
-                    TurnItem.UserTurn(nextKey(), text) +
+                    TurnItem.UserTurn(nextKey(), text, fromVoice = fromVoice) +
                     TurnItem.AssistantTurn(nextKey()),
-                draft = "",
+                // Only clear the draft for typed sends; voice-in never wrote
+                // to it.
+                draft = if (fromVoice) s.draft else "",
                 sending = true,
                 turnInFlight = true,
             )
@@ -112,8 +166,75 @@ class ChatViewModel(
         }
     }
 
+    fun toggleMic() {
+        when (_state.value.voice) {
+            VoiceUi.Recording -> {
+                viewModelScope.launch {
+                    mic.stop().exceptionOrNull()?.let {
+                        setVoiceError(it.message ?: "mic stop failed")
+                    }
+                }
+            }
+            VoiceUi.Transcribing -> {
+                // No-op while transcribing; user can dismiss the error if
+                // they want to retry. Stop is not exposed mid-flight.
+            }
+            VoiceUi.Speaking, VoiceUi.Idle -> {
+                ttsPlayer.stop()
+                viewModelScope.launch {
+                    mic.start().exceptionOrNull()?.let {
+                        setVoiceError(it.message ?: "mic start failed")
+                    }
+                }
+            }
+        }
+    }
+
+    fun toggleAutoSpeak() {
+        _state.update { it.copy(autoSpeak = !it.autoSpeak) }
+    }
+
+    fun dismissVoiceError() {
+        _state.update { it.copy(voiceError = null) }
+    }
+
     override fun onCleared() {
         ws.close()
+        // mic and ttsPlayer are application-scoped (live in AppContainer).
+        // We pause them, but never release — that would crash the next VM
+        // that tries to use them. Final release happens on process death.
+        mic.cancel()
+        ttsPlayer.stop()
+    }
+
+    private fun setVoice(v: VoiceUi) {
+        _state.update { it.copy(voice = v) }
+    }
+
+    private fun setVoiceError(msg: String) {
+        _state.update { it.copy(voiceError = msg) }
+    }
+
+    private fun transcribeAndSend(file: File) {
+        viewModelScope.launch {
+            val cfg = settings.configFlow.first()
+            val result = sttApi.transcribe(cfg.baseUrl, file)
+            result.fold(
+                onSuccess = { text ->
+                    if (text.isBlank()) {
+                        setVoiceError("No speech detected")
+                        setVoice(VoiceUi.Idle)
+                    } else {
+                        setVoice(VoiceUi.Idle)
+                        sendMessage(text, fromVoice = true)
+                    }
+                },
+                onFailure = { t ->
+                    setVoiceError(t.message ?: "transcription failed")
+                    setVoice(VoiceUi.Idle)
+                },
+            )
+        }
     }
 
     private fun handleFrame(frame: ParsedFrame) {
@@ -173,13 +294,16 @@ class ChatViewModel(
                 s.copy(turns = s.turns.updateLastAssistantTurn { it.copy(metric = event) })
             }
 
-            is ChatEvent.Done -> _state.update { s ->
-                s.copy(
-                    turns = s.turns.updateLastAssistantTurn {
-                        it.copy(finalText = event.content, thinkingIteration = null)
-                    },
-                    turnInFlight = false,
-                )
+            is ChatEvent.Done -> {
+                _state.update { s ->
+                    s.copy(
+                        turns = s.turns.updateLastAssistantTurn {
+                            it.copy(finalText = event.content, thinkingIteration = null)
+                        },
+                        turnInFlight = false,
+                    )
+                }
+                maybeSpeakReply(event.content)
             }
 
             is ChatEvent.Err -> _state.update { s ->
@@ -194,6 +318,20 @@ class ChatViewModel(
             is ChatEvent.SummaryReset -> _state.update { s ->
                 s.copy(turns = s.turns + TurnItem.SummaryResetMarker(nextKey(), event.reason, event.summary))
             }
+        }
+    }
+
+    private fun maybeSpeakReply(content: String) {
+        if (content.isBlank()) return
+        val lastUser = _state.value.turns.lastOrNull { it is TurnItem.UserTurn } as? TurnItem.UserTurn
+        val shouldSpeak = (lastUser?.fromVoice == true) || _state.value.autoSpeak
+        if (!shouldSpeak) return
+        viewModelScope.launch {
+            val cfg = settings.configFlow.first()
+            ttsApi.speak(cfg.baseUrl, content).fold(
+                onSuccess = { spoken -> ttsPlayer.play(spoken.bytes, spoken.contentType) },
+                onFailure = { t -> setVoiceError(t.message ?: "TTS failed") },
+            )
         }
     }
 

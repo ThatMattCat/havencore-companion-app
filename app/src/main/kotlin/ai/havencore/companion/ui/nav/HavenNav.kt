@@ -112,6 +112,10 @@ fun HavenNav(container: AppContainer) {
                             settings = container.settings,
                             chatApi = container.chatApi,
                             ws = container.ws,
+                            sttApi = container.sttApi,
+                            ttsApi = container.ttsApi,
+                            mic = container.mic,
+                            ttsPlayer = container.ttsPlayer,
                             sessionToResume = sid,
                         )
                     }

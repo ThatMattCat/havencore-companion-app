@@ -11,6 +11,9 @@ data class ChatUiState(
     val sending: Boolean = false,
     val turnInFlight: Boolean = false,
     val connection: ConnectionUi = ConnectionUi.Connecting,
+    val voice: VoiceUi = VoiceUi.Idle,
+    val autoSpeak: Boolean = false,
+    val voiceError: String? = null,
 )
 
 sealed interface ConnectionUi {
@@ -20,12 +23,20 @@ sealed interface ConnectionUi {
     data class Failed(val message: String) : ConnectionUi
 }
 
+sealed interface VoiceUi {
+    data object Idle : VoiceUi
+    data object Recording : VoiceUi
+    data object Transcribing : VoiceUi
+    data object Speaking : VoiceUi
+}
+
 sealed interface TurnItem {
     val key: Long
 
     data class UserTurn(
         override val key: Long,
         val text: String,
+        val fromVoice: Boolean = false,
     ) : TurnItem
 
     data class AssistantTurn(
