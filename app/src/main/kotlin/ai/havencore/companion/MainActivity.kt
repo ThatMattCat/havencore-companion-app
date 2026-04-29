@@ -22,6 +22,7 @@ class MainActivity : ComponentActivity() {
                     app.container.settings,
                     app.container.api,
                     app.container.chatApi,
+                    app.container.ws,
                 )
             }
         }

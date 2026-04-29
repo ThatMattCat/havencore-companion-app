@@ -2,6 +2,7 @@
 
 package ai.havencore.companion.net
 
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -25,9 +26,13 @@ val HavenJson: Json = Json {
 // Client -> server frames
 // ---------------------------------------------------------------------------
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class SessionFrame(
-    val type: String = "session",
+    // The agent dispatches on data.get("type"); HavenJson has
+    // encodeDefaults = false, so without @EncodeDefault the discriminator
+    // would be silently dropped from the wire frame.
+    @EncodeDefault val type: String = "session",
     val session_id: String? = null,
     val idle_timeout: Int? = null,
     val device_name: String? = null,

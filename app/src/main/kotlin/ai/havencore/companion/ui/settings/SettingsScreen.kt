@@ -106,6 +106,12 @@ fun SettingsScreen(vm: SettingsViewModel) {
             ) {
                 Text("List conversations (debug)")
             }
+            OutlinedButton(
+                onClick = vm::debugTestChatWs,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Test chat WS (debug)")
+            }
 
             HorizontalDivider()
 
