@@ -12,17 +12,27 @@ default-assistant slot (long-press home / power), and push notifications via
 UnifiedPush + ntfy. The agent itself lives in the sibling repo at
 `/home/matt/code/havencore`.
 
-**Phase 0 (settings + connectivity probe) and Phase 1 (text chat over
-`/ws/chat` + history list with resume) are both complete and verified
-end-to-end on a real phone.** Master plan at
+**Phases 0 (settings + connectivity probe), 1 (text chat over `/ws/chat`
++ history list with resume), and 2 (in-app push-to-talk voice over
+`/api/stt/transcribe` and `/api/tts/speak`) are all complete and
+verified end-to-end on a real phone.** Master plan at
 `/home/matt/.claude/plans/we-should-have-a-functional-orbit.md`. Phase 0
 acceptance plan at
 `/home/matt/.claude/plans/we-previously-planned-stateful-tarjan.md`. Phase 1
 acceptance plan at
-`/home/matt/.claude/plans/replicated-spinning-sundae.md`.
+`/home/matt/.claude/plans/replicated-spinning-sundae.md`. Phase 2
+acceptance plan at
+`/home/matt/.claude/plans/i-want-to-misty-wind.md`.
 
-Phase 2 (voice in-app — push-to-talk over `/api/stt/transcribe` and
-`/api/tts/speak`) is the next phase.
+Phase 3 (default-assistant slot — `VoiceInteractionService` for the
+long-press home / power slot, lockscreen, and Assist intent) is the
+next phase.
+
+Known issue carried into Phase 3: STT (Whisper) hallucinates plausible
+text on silent / very short clips ("Thank you", subtitle credits) — see
+`docs/wire-protocol.md` and the TODO in
+`ChatViewModel.transcribeAndSend`. The fix is client-side gating
+(duration + RMS energy threshold) before hitting STT.
 
 ## Stack
 
