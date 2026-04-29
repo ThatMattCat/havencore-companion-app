@@ -10,10 +10,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -21,7 +25,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,29 +32,32 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import android.widget.Toast
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(vm: SettingsViewModel) {
+fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
     val config by vm.config.collectAsState()
     val ping by vm.ping.collectAsState()
 
     var baseUrl by rememberSaveable(config.baseUrl) { mutableStateOf(config.baseUrl) }
     var deviceName by rememberSaveable(config.deviceName) { mutableStateOf(config.deviceName) }
 
-    val context = LocalContext.current
-    LaunchedEffect(vm) {
-        vm.toasts.collect { msg ->
-            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-        }
-    }
-
     Scaffold(
-        topBar = { TopAppBar(title = { Text("HavenCore Companion") }) },
+        topBar = {
+            TopAppBar(
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                        )
+                    }
+                },
+                title = { Text("Settings") },
+            )
+        },
     ) { padding ->
         Column(
             modifier = Modifier
@@ -61,11 +67,6 @@ fun SettingsScreen(vm: SettingsViewModel) {
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
-                "Phase 0 – settings + connectivity probe",
-                style = MaterialTheme.typography.titleMedium,
-            )
-
             OutlinedTextField(
                 value = baseUrl,
                 onValueChange = { baseUrl = it },
@@ -97,20 +98,6 @@ fun SettingsScreen(vm: SettingsViewModel) {
                 ) {
                     Text("Test connection")
                 }
-            }
-
-            // Phase 1 debug — replaced by the History screen in commit 5.
-            OutlinedButton(
-                onClick = vm::debugListConversations,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("List conversations (debug)")
-            }
-            OutlinedButton(
-                onClick = vm::debugTestChatWs,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Test chat WS (debug)")
             }
 
             HorizontalDivider()
