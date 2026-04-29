@@ -18,8 +18,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -47,6 +49,7 @@ fun AssistOverlay(
     stateFlow: StateFlow<AssistUiState>,
     onDismiss: () -> Unit,
     onOpenApp: () -> Unit = {},
+    onStopMic: () -> Unit = {},
 ) {
     val state by stateFlow.collectAsState()
 
@@ -77,6 +80,7 @@ fun AssistOverlay(
             AssistOverlayBody(
                 state = state,
                 onOpenApp = onOpenApp,
+                onStopMic = onStopMic,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp, vertical = 24.dp),
@@ -89,18 +93,26 @@ fun AssistOverlay(
 private fun AssistOverlayBody(
     state: AssistUiState,
     onOpenApp: () -> Unit,
+    onStopMic: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         when (state.phase) {
             Phase.Connecting -> StatusRow(spinner = true, text = "Connecting…")
-            Phase.Listening -> StatusRow(
-                icon = { Icon(Icons.Filled.Mic, contentDescription = null) },
-                text = "Listening",
-            )
+            Phase.Listening -> {
+                StatusRow(
+                    icon = { Icon(Icons.Filled.Mic, contentDescription = null) },
+                    text = "Listening",
+                )
+                Button(onClick = onStopMic) {
+                    Icon(Icons.Filled.Stop, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Stop")
+                }
+            }
             Phase.Transcribing -> StatusRow(spinner = true, text = "Hearing you…")
             Phase.Thinking -> {
                 if (state.transcript.isNotBlank()) TranscriptBubble(state.transcript)
