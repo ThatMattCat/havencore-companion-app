@@ -23,10 +23,13 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * Plays a TTS audio blob through Media3 [ExoPlayer] with USAGE_ASSISTANT
- * audio attributes. The system handles A2DP routing automatically when a
- * Bluetooth media sink is connected; audio focus is handled by ExoPlayer
- * when the AudioAttributes path is built with `handleAudioFocus = true`.
+ * Plays a TTS audio blob through Media3 [ExoPlayer]. Uses USAGE_MEDIA +
+ * CONTENT_TYPE_SPEECH because ExoPlayer's automatic audio focus handler
+ * only accepts USAGE_MEDIA and USAGE_GAME — passing USAGE_ASSISTANT with
+ * handleAudioFocus=true throws IllegalArgumentException at construction.
+ * The semantic difference (vs USAGE_ASSISTANT) is mostly around car-mode
+ * audio bus routing; for a phone companion app, USAGE_MEDIA matches the
+ * media stream, which is the standard A2DP target.
  *
  * ExoPlayer is single-threaded — all method calls must come from the
  * Application thread (the looper the player was built on, which is the
@@ -52,7 +55,7 @@ class TtsPlayer(private val ctx: Context) {
     private val player: ExoPlayer = ExoPlayer.Builder(ctx)
         .setAudioAttributes(
             AudioAttributes.Builder()
-                .setUsage(C.USAGE_ASSISTANT)
+                .setUsage(C.USAGE_MEDIA)
                 .setContentType(C.AUDIO_CONTENT_TYPE_SPEECH)
                 .build(),
             /* handleAudioFocus = */ true,
