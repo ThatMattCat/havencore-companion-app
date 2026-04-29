@@ -93,7 +93,7 @@ fun ChatScreen(
                 .padding(padding)
                 .fillMaxSize(),
         ) {
-            ConnectionBanner(state.connection)
+            ConnectionBanner(state.connection, onRetry = vm::retry)
             LazyColumn(
                 state = listState,
                 modifier = Modifier

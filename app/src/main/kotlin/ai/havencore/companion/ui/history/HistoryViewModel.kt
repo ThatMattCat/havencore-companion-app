@@ -31,6 +31,17 @@ class HistoryViewModel(
         refresh()
     }
 
+    /**
+     * Clear the persisted last session id. Call from the FAB path before
+     * navigating to a brand-new chat so a future cold-start doesn't quietly
+     * resume an unrelated conversation.
+     */
+    fun clearLastSessionForNewChat() {
+        viewModelScope.launch {
+            settings.setLastSessionId(null)
+        }
+    }
+
     fun refresh() {
         viewModelScope.launch {
             _state.value = HistoryListState.Loading

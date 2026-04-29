@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
@@ -17,6 +18,7 @@ class SettingsRepository(context: Context) {
 
     private val keyBaseUrl = stringPreferencesKey("base_url")
     private val keyDeviceName = stringPreferencesKey("device_name")
+    private val keyLastSessionId = stringPreferencesKey("last_session_id")
 
     val configFlow: Flow<ServerConfig> = store.data.map { prefs ->
         ServerConfig(
@@ -25,11 +27,27 @@ class SettingsRepository(context: Context) {
         )
     }
 
+    val lastSessionIdFlow: Flow<String?> = store.data.map { prefs ->
+        prefs[keyLastSessionId]?.takeIf(String::isNotBlank)
+    }
+
+    suspend fun lastSessionId(): String? = lastSessionIdFlow.first()
+
     suspend fun update(baseUrl: String, deviceName: String) {
         val cleaned = baseUrl.trim().trimEnd('/')
         store.edit { prefs ->
             prefs[keyBaseUrl] = cleaned
             prefs[keyDeviceName] = deviceName.trim()
+        }
+    }
+
+    suspend fun setLastSessionId(sid: String?) {
+        store.edit { prefs ->
+            if (sid.isNullOrBlank()) {
+                prefs.remove(keyLastSessionId)
+            } else {
+                prefs[keyLastSessionId] = sid
+            }
         }
     }
 }

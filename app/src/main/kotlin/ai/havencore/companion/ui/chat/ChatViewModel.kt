@@ -29,14 +29,26 @@ class ChatViewModel(
     private var keyCounter: Long = 0L
     private fun nextKey(): Long = ++keyCounter
 
+    private var hasHydrated: Boolean = false
+
     init {
+        runSession()
+    }
+
+    fun retry() {
+        runSession()
+    }
+
+    private fun runSession() {
         viewModelScope.launch {
             val cfg = settings.configFlow.first()
 
-            // 1. Optionally hydrate prior turns from the resume endpoint.
-            if (sessionToResume != null) {
+            // 1. Hydrate prior turns once. retry() is a re-connect, not a
+            //    re-hydrate — the existing turn list stays put.
+            if (sessionToResume != null && !hasHydrated) {
                 val resumed = chatApi.resumeConversation(cfg.baseUrl, sessionToResume)
                 resumed.onSuccess { resp ->
+                    hasHydrated = true
                     val turns = ResumeMapper.toTurns(resp.messages, ::nextKey)
                     _state.update { it.copy(turns = turns, sessionId = resp.session_id) }
                 }.onFailure { t ->
@@ -114,7 +126,10 @@ class ChatViewModel(
 
     private fun reduce(event: ChatEvent) {
         when (event) {
-            is ChatEvent.Session -> _state.update { it.copy(sessionId = event.session_id) }
+            is ChatEvent.Session -> {
+                _state.update { it.copy(sessionId = event.session_id) }
+                viewModelScope.launch { settings.setLastSessionId(event.session_id) }
+            }
 
             is ChatEvent.Thinking -> _state.update { s ->
                 s.copy(turns = s.turns.updateLastAssistantTurn { it.copy(thinkingIteration = event.iteration) })

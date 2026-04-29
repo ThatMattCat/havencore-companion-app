@@ -11,13 +11,18 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun ConnectionBanner(state: ConnectionUi, modifier: Modifier = Modifier) {
+fun ConnectionBanner(
+    state: ConnectionUi,
+    modifier: Modifier = Modifier,
+    onRetry: (() -> Unit)? = null,
+) {
     AnimatedVisibility(
         visible = state !is ConnectionUi.Connected,
         modifier = modifier,
@@ -30,6 +35,10 @@ fun ConnectionBanner(state: ConnectionUi, modifier: Modifier = Modifier) {
             is ConnectionUi.Failed -> "Connection failed: ${state.message}"
         }
         val showSpinner = state is ConnectionUi.Connecting || state is ConnectionUi.Reconnecting
+        // Retry only makes sense once the supervisor has given up — which in
+        // this app surfaces as ConnectionUi.Failed (clean close or invalid
+        // baseUrl). Reconnecting handles its own backoff loop.
+        val showRetry = onRetry != null && state is ConnectionUi.Failed
 
         Surface(
             tonalElevation = 2.dp,
@@ -38,7 +47,7 @@ fun ConnectionBanner(state: ConnectionUi, modifier: Modifier = Modifier) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -53,6 +62,9 @@ fun ConnectionBanner(state: ConnectionUi, modifier: Modifier = Modifier) {
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodySmall,
                 )
+                if (showRetry) {
+                    TextButton(onClick = onRetry!!) { Text("Retry") }
+                }
             }
         }
     }

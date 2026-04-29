@@ -68,7 +68,10 @@ fun HistoryScreen(
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
-                onClick = onNew,
+                onClick = {
+                    vm.clearLastSessionForNewChat()
+                    onNew()
+                },
                 icon = { Icon(Icons.Default.Add, contentDescription = null) },
                 text = { Text("New conversation") },
             )
