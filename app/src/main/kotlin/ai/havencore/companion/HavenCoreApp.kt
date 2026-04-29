@@ -5,6 +5,8 @@ import ai.havencore.companion.net.ChatApi
 import ai.havencore.companion.net.ChatWsSession
 import ai.havencore.companion.net.ConversationsApi
 import ai.havencore.companion.net.HavenCoreClient
+import ai.havencore.companion.net.SttApi
+import ai.havencore.companion.net.TtsApi
 import android.app.Application
 import android.content.Context
 
@@ -24,4 +26,6 @@ class AppContainer(ctx: Context) {
     val api = ConversationsApi(http)
     val chatApi = ChatApi(http)
     val ws = ChatWsSession(http)
+    val sttApi = SttApi(http)
+    val ttsApi = TtsApi(http)
 }

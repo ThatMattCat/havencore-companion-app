@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
     val config by vm.config.collectAsState()
     val ping by vm.ping.collectAsState()
+    val ttsTest by vm.ttsTest.collectAsState()
 
     var baseUrl by rememberSaveable(config.baseUrl) { mutableStateOf(config.baseUrl) }
     var deviceName by rememberSaveable(config.deviceName) { mutableStateOf(config.deviceName) }
@@ -120,6 +121,38 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                 )
                 is PingState.Err -> Text(
                     "Failed: ${s.message}",
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+
+            HorizontalDivider()
+
+            Text(
+                "Phase 2 debug",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(
+                onClick = vm::testTts,
+                enabled = ttsTest !is TtsTestState.InFlight,
+            ) {
+                Text("Test TTS")
+            }
+            when (val s = ttsTest) {
+                TtsTestState.Untested -> {} // no row until first tap
+                TtsTestState.InFlight -> Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                    Text("Synthesizing …")
+                }
+                is TtsTestState.Ok -> Text(
+                    "received ${s.bytes} bytes (${s.contentType})",
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                is TtsTestState.Err -> Text(
+                    "TTS failed: ${s.message}",
                     color = MaterialTheme.colorScheme.error,
                 )
             }

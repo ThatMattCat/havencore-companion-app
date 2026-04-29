@@ -3,6 +3,7 @@ package ai.havencore.companion.ui.settings
 import ai.havencore.companion.data.ServerConfig
 import ai.havencore.companion.data.SettingsRepository
 import ai.havencore.companion.net.ConversationsApi
+import ai.havencore.companion.net.TtsApi
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,9 +20,19 @@ sealed interface PingState {
     data class Err(val message: String) : PingState
 }
 
+// Phase 2 step 2 debug surface; removed in step 6 alongside the other
+// temporary debug buttons.
+sealed interface TtsTestState {
+    data object Untested : TtsTestState
+    data object InFlight : TtsTestState
+    data class Ok(val bytes: Int, val contentType: String) : TtsTestState
+    data class Err(val message: String) : TtsTestState
+}
+
 class SettingsViewModel(
     private val repo: SettingsRepository,
     private val api: ConversationsApi,
+    private val ttsApi: TtsApi,
 ) : ViewModel() {
 
     val config: StateFlow<ServerConfig> =
@@ -33,6 +44,9 @@ class SettingsViewModel(
 
     private val _ping = MutableStateFlow<PingState>(PingState.Untested)
     val ping: StateFlow<PingState> = _ping.asStateFlow()
+
+    private val _ttsTest = MutableStateFlow<TtsTestState>(TtsTestState.Untested)
+    val ttsTest: StateFlow<TtsTestState> = _ttsTest.asStateFlow()
 
     fun save(baseUrl: String, deviceName: String) {
         viewModelScope.launch {
@@ -54,6 +68,24 @@ class SettingsViewModel(
                 onSuccess = { PingState.Ok(it) },
                 onFailure = {
                     PingState.Err(it.message ?: it::class.simpleName ?: "Unknown error")
+                },
+            )
+        }
+    }
+
+    fun testTts() {
+        val url = config.value.baseUrl
+        if (url.isBlank()) {
+            _ttsTest.value = TtsTestState.Err("Save a server URL first")
+            return
+        }
+        _ttsTest.value = TtsTestState.InFlight
+        viewModelScope.launch {
+            val result = ttsApi.speak(url, "hello from havencore companion")
+            _ttsTest.value = result.fold(
+                onSuccess = { TtsTestState.Ok(bytes = it.bytes.size, contentType = it.contentType) },
+                onFailure = {
+                    TtsTestState.Err(it.message ?: it::class.simpleName ?: "Unknown error")
                 },
             )
         }
