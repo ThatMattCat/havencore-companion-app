@@ -13,20 +13,32 @@ UnifiedPush + ntfy. The agent itself lives in the sibling repo at
 `/home/matt/code/havencore`.
 
 **Phases 0 (settings + connectivity probe), 1 (text chat over `/ws/chat`
-+ history list with resume), and 2 (in-app push-to-talk voice over
-`/api/stt/transcribe` and `/api/tts/speak`) are all complete and
-verified end-to-end on a real phone.** Master plan at
++ history list with resume), 2 (in-app push-to-talk voice over
+`/api/stt/transcribe` and `/api/tts/speak`), and 3 (default-assistant
+slot via `VoiceInteractionService` — long-press home / power, lockscreen,
+and `Intent.ACTION_ASSIST`) are all complete and verified end-to-end on
+a real phone.** Master plan at
 `/home/matt/.claude/plans/we-should-have-a-functional-orbit.md`. Phase 0
 acceptance plan at
 `/home/matt/.claude/plans/we-previously-planned-stateful-tarjan.md`. Phase 1
 acceptance plan at
 `/home/matt/.claude/plans/replicated-spinning-sundae.md`. Phase 2
 acceptance plan at
-`/home/matt/.claude/plans/i-want-to-misty-wind.md`.
+`/home/matt/.claude/plans/i-want-to-misty-wind.md`. Phase 3 acceptance
+plan at `/home/matt/.claude/plans/i-want-to-rosy-finch.md`.
 
-Phase 3 (default-assistant slot — `VoiceInteractionService` for the
-long-press home / power slot, lockscreen, and Assist intent) is the
-next phase. Plan at `/home/matt/.claude/plans/i-want-to-rosy-finch.md`.
+Phase 4 (UnifiedPush + ntfy push notifications) is the next phase.
+
+Phase 3 OEM gotcha (Samsung): the Digital Assistant role picker on
+Samsung filters out a `VoiceInteractionService` whose package does not
+also declare a `RecognitionService`, even when STT is proxied to a
+server. `voice/HavenStubRecognitionService` is a no-op stub that exists
+purely to satisfy that filter — every request fails fast with
+`ERROR_RECOGNIZER_BUSY`. Same applies to the role-request intent path:
+`RoleManager.createRequestRoleIntent(ROLE_ASSISTANT)` resolves on
+Samsung but silently no-ops, so `DefaultAssistantHelper.pickerIntent()`
+unconditionally sends users to `Settings.ACTION_VOICE_INPUT_SETTINGS`
+instead.
 
 ## Stack
 
@@ -56,7 +68,7 @@ script discovers it via mDNS so most days you never touch IPs.
 source scripts/adb-env.sh        # PATHs + mDNS-discover + adb connect
 ./gradlew installDebug           # build + push to phone in one step
 adb shell am start -n ai.havencore.companion/.MainActivity
-adb logcat | grep -i 'havencore\|ChatWs\|ChatVM\|MicRec\|TtsPlay\|VoiceVM'   # tail logs
+adb logcat | grep -i 'havencore\|ChatWs\|ChatVM\|MicRec\|TtsPlay\|Voice:VIS\|Voice:Sess'   # tail logs
 ```
 
 Override discovery if mDNS is blocked: `PHONE_HOST=10.0.0.115:39961 source scripts/adb-env.sh`.
@@ -83,23 +95,37 @@ one device/emulator".
 
 ```
 app/src/main/kotlin/ai/havencore/companion/
-├── HavenCoreApp.kt              # Application class — manual DI container
+├── HavenCoreApp.kt              # Application class — manual DI container (incl. appContext)
 ├── MainActivity.kt              # single-activity Compose host (delegates to HavenNav)
 ├── data/
 │   ├── ServerConfig.kt
-│   └── SettingsRepository.kt    # DataStore<Preferences>: baseUrl, deviceName, lastSessionId
+│   └── SettingsRepository.kt    # DataStore<Preferences>: baseUrl, deviceName, lastSessionId, autoSpeak, default_assistant_prompt_seen
+├── audio/
+│   ├── MicRecorder.kt           # AAC-in-MP4 capture with peak-amplitude polling for hasSpeech() gate
+│   └── TtsPlayer.kt             # Media3 ExoPlayer wrapper for TTS playback
 ├── net/
 │   ├── HavenCoreClient.kt       # shared OkHttp client builder
 │   ├── ConversationsApi.kt      # GET /api/conversations probe (Phase 0)
 │   ├── ChatProtocol.kt          # HavenJson + WS DTOs + REST DTOs + parseChatFrame
 │   ├── ChatApi.kt               # history list + resume REST
-│   └── ChatWsSession.kt         # WS supervisor with reconnect ladder
+│   ├── ChatWsSession.kt         # WS supervisor with reconnect ladder
+│   ├── SttApi.kt                # POST /api/stt/transcribe multipart upload
+│   └── TtsApi.kt                # POST /api/tts/speak
+├── voice/                       # Phase 3 — default-assistant slot
+│   ├── HavenAssistService.kt           # VoiceInteractionService (logs only)
+│   ├── HavenAssistSessionService.kt    # VoiceInteractionSessionService (factory)
+│   ├── HavenAssistSession.kt           # VoiceInteractionSession — orchestrates round-trip
+│   ├── HavenStubRecognitionService.kt  # no-op RecognitionService (Samsung filter satisfaction)
+│   ├── DefaultAssistantHelper.kt       # RoleManager wrapper
+│   ├── AssistUiState.kt                # Phase enum + state
+│   ├── AssistLifecycleOwner.kt         # Lifecycle/SavedState/ViewModelStore shim for ComposeView
+│   └── AssistOverlay.kt                # Compose bottom sheet
 └── ui/
     ├── nav/HavenNav.kt          # NavHost + route table
-    ├── settings/{SettingsScreen.kt, SettingsViewModel.kt}
+    ├── settings/{SettingsScreen.kt, SettingsViewModel.kt}  # incl. DefaultAssistantBanner
     ├── history/{HistoryScreen.kt, HistoryViewModel.kt}
     ├── chat/
-    │   ├── ChatScreen.kt
+    │   ├── ChatScreen.kt        # incl. one-shot default-assistant prompt dialog
     │   ├── ChatViewModel.kt
     │   ├── ChatUiState.kt
     │   ├── ResumeMapper.kt      # OpenAI messages -> Turn list
@@ -107,8 +133,7 @@ app/src/main/kotlin/ai/havencore/companion/
     └── theme/{Color.kt, Theme.kt, Type.kt}
 ```
 
-Future surfaces per master plan: `voice/` (`VoiceInteractionService`),
-`audio/` (mic capture, TTS playback), `push/` (UnifiedPush), `ui/todo/`.
+Future surfaces per master plan: `push/` (UnifiedPush + ntfy), `ui/todo/`.
 
 ## Backend the app talks to
 
@@ -122,9 +147,14 @@ Currently consumed:
 - `WS /ws/chat` — Phase 1, see `docs/wire-protocol.md` for the framing
   details that aren't obvious from the master plan (lowercase event types,
   no `RESPONSE_CHUNK`, `session_id` honored only on first frame, etc.)
+- `POST /api/stt/transcribe` — Phase 2, multipart audio upload
+- `POST /api/tts/speak` — Phase 2, JSON body with text + voice/format/speed
 
-Phase 2 will add `POST /api/stt/transcribe`, `POST /api/tts/speak`, and
-`GET /api/tts/voices`. The authoritative source for all of these is
+Phase 3 reuses all of the above; the assist session opens its own
+`ChatWsSession` so the foreground chat WS is not knocked off, but binds
+to the same `lastSessionId` so voice-from-assist turns land in History
+next to typed/voice-in-app turns. The authoritative source for the
+agent's HTTP / WS surfaces is
 `/home/matt/code/havencore/services/agent/selene_agent/api/`.
 
 CORS is `*` and there is no auth on `/api/*` — the app is LAN-only; cleartext
