@@ -18,7 +18,11 @@ class MainActivity : ComponentActivity() {
         val app = application as HavenCoreApp
         val factory = viewModelFactory {
             initializer {
-                SettingsViewModel(app.container.settings, app.container.api)
+                SettingsViewModel(
+                    app.container.settings,
+                    app.container.api,
+                    app.container.chatApi,
+                )
             }
         }
         val vm = ViewModelProvider(this, factory)[SettingsViewModel::class.java]
