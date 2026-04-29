@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Phase 0: cleartext globally allowed because baseUrl is user-entered at
+         runtime and Android NSC requires domain-name literals (no CIDR ranges).
+         Tighten to a domain-config entry per-host once a server-discovery flow
+         exists. -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
