@@ -1,5 +1,6 @@
 package ai.havencore.companion.ui.settings
 
+import ai.havencore.companion.voice.DefaultAssistantHelper
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,7 +13,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -23,6 +28,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -32,14 +38,26 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
     val config by vm.config.collectAsState()
     val ping by vm.ping.collectAsState()
+    val isAssistantHeld by vm.isAssistantHeld.collectAsState()
+
+    val ctx = LocalContext.current
+
+    // Re-check the role on every resume so returning from the system role
+    // picker / Settings flips the banner without an app restart.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        vm.refreshAssistantHeld()
+    }
 
     var baseUrl by rememberSaveable(config.baseUrl) { mutableStateOf(config.baseUrl) }
     var deviceName by rememberSaveable(config.deviceName) { mutableStateOf(config.deviceName) }
@@ -67,6 +85,13 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            DefaultAssistantBanner(
+                held = isAssistantHeld,
+                onLaunchPicker = {
+                    ctx.startActivity(DefaultAssistantHelper.pickerIntent())
+                },
+            )
+
             OutlinedTextField(
                 value = baseUrl,
                 onValueChange = { baseUrl = it },
@@ -122,6 +147,63 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                     "Failed: ${s.message}",
                     color = MaterialTheme.colorScheme.error,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DefaultAssistantBanner(
+    held: Boolean,
+    onLaunchPicker: () -> Unit,
+) {
+    val colors = if (held) {
+        CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        )
+    } else {
+        CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        )
+    }
+    Card(
+        colors = colors,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(
+                imageVector = if (held) Icons.Filled.CheckCircle else Icons.Filled.Warning,
+                contentDescription = null,
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = if (held) {
+                        "HavenCore is your default assistant"
+                    } else {
+                        "Set HavenCore as your default assistant"
+                    },
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                if (!held) {
+                    Text(
+                        text = "Long-press home or power to talk hands-free.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+            TextButton(onClick = onLaunchPicker) {
+                Text(if (held) "Manage" else "Set up")
             }
         }
     }

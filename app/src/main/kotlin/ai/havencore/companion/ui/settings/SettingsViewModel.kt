@@ -3,6 +3,8 @@ package ai.havencore.companion.ui.settings
 import ai.havencore.companion.data.ServerConfig
 import ai.havencore.companion.data.SettingsRepository
 import ai.havencore.companion.net.ConversationsApi
+import ai.havencore.companion.voice.DefaultAssistantHelper
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +24,7 @@ sealed interface PingState {
 class SettingsViewModel(
     private val repo: SettingsRepository,
     private val api: ConversationsApi,
+    private val appContext: Context,
 ) : ViewModel() {
 
     val config: StateFlow<ServerConfig> =
@@ -33,6 +36,13 @@ class SettingsViewModel(
 
     private val _ping = MutableStateFlow<PingState>(PingState.Untested)
     val ping: StateFlow<PingState> = _ping.asStateFlow()
+
+    private val _isAssistantHeld = MutableStateFlow(DefaultAssistantHelper.isHeld(appContext))
+    val isAssistantHeld: StateFlow<Boolean> = _isAssistantHeld.asStateFlow()
+
+    fun refreshAssistantHeld() {
+        _isAssistantHeld.value = DefaultAssistantHelper.isHeld(appContext)
+    }
 
     fun save(baseUrl: String, deviceName: String) {
         viewModelScope.launch {

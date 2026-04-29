@@ -23,6 +23,7 @@ class HavenCoreApp : Application() {
 }
 
 class AppContainer(ctx: Context) {
+    val appContext: Context = ctx.applicationContext
     val settings: SettingsRepository = SettingsRepository(ctx)
     val http = HavenCoreClient.build()
     val api = ConversationsApi(http)
