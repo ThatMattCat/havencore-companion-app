@@ -101,6 +101,8 @@ class HavenAssistSession(context: Context) : VoiceInteractionSession(context) {
                 HavenCoreTheme {
                     AssistOverlay(
                         stateFlow = state,
+                        amplitudeFlow = app.mic.currentAmplitude,
+                        ttsStateFlow = app.ttsPlayer.state,
                         onDismiss = { finish() },
                         onOpenApp = { openHavenCoreAndFinish() },
                         onStopMic = { stopMicFromOverlay() },
