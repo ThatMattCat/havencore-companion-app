@@ -1,6 +1,13 @@
 package ai.havencore.companion.ui.settings
 
+import ai.havencore.companion.HavenCoreApp
+import ai.havencore.companion.push.PushPayload
 import ai.havencore.companion.voice.DefaultAssistantHelper
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 
@@ -127,6 +135,14 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
 
             HorizontalDivider()
 
+            // TEMP (Phase 4 commit 2): manually fires a notification so we
+            // can verify channel registration + tap-through routing before
+            // UnifiedPush is wired. Removed in commit 5 alongside the
+            // Notifications card landing.
+            TestNotificationButton()
+
+            HorizontalDivider()
+
             when (val s = ping) {
                 PingState.Untested -> Text(
                     "Untested. Save your server URL, then tap Test connection.",
@@ -149,6 +165,36 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun TestNotificationButton() {
+    val ctx = LocalContext.current
+    val fire = {
+        val app = ctx.applicationContext as HavenCoreApp
+        app.container.pushNotifier.notify(
+            PushPayload(title = "Selene", body = "Test push", severity = "info"),
+        )
+    }
+    val permLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted -> if (granted) fire() }
+
+    OutlinedButton(
+        onClick = {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(
+                    ctx, Manifest.permission.POST_NOTIFICATIONS,
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                permLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                fire()
+            }
+        },
+    ) {
+        Text("Test notification")
     }
 }
 

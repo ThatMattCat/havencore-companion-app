@@ -22,6 +22,7 @@ class SettingsRepository(context: Context) {
     private val keyLastSessionId = stringPreferencesKey("last_session_id")
     private val keyAutoSpeak = booleanPreferencesKey("auto_speak")
     private val keyAssistPromptSeen = booleanPreferencesKey("default_assistant_prompt_seen")
+    private val keyPushDeviceId = stringPreferencesKey("push_device_id")
 
     val configFlow: Flow<ServerConfig> = store.data.map { prefs ->
         ServerConfig(
@@ -65,5 +66,13 @@ class SettingsRepository(context: Context) {
 
     suspend fun setDefaultAssistantPromptSeen(seen: Boolean) {
         store.edit { prefs -> prefs[keyAssistPromptSeen] = seen }
+    }
+
+    val pushDeviceIdFlow: Flow<String?> = store.data.map { prefs -> prefs[keyPushDeviceId] }
+
+    suspend fun pushDeviceId(): String? = pushDeviceIdFlow.first()
+
+    suspend fun setPushDeviceId(id: String) {
+        store.edit { prefs -> prefs[keyPushDeviceId] = id }
     }
 }

@@ -9,6 +9,9 @@ import ai.havencore.companion.net.ConversationsApi
 import ai.havencore.companion.net.HavenCoreClient
 import ai.havencore.companion.net.SttApi
 import ai.havencore.companion.net.TtsApi
+import ai.havencore.companion.push.DeviceIdProvider
+import ai.havencore.companion.push.PushChannel
+import ai.havencore.companion.push.PushNotifier
 import android.app.Application
 import android.content.Context
 
@@ -19,6 +22,7 @@ class HavenCoreApp : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        PushChannel.register(this)
     }
 }
 
@@ -33,4 +37,8 @@ class AppContainer(ctx: Context) {
     val ttsApi = TtsApi(http)
     val mic = MicRecorder(ctx)
     val ttsPlayer = TtsPlayer(ctx)
+
+    // Phase 4
+    val pushNotifier = PushNotifier(appContext)
+    val deviceIdProvider = DeviceIdProvider(settings)
 }
