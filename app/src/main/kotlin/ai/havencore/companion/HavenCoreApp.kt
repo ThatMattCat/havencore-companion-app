@@ -12,6 +12,7 @@ import ai.havencore.companion.net.SttApi
 import ai.havencore.companion.net.TtsApi
 import ai.havencore.companion.push.DeviceIdProvider
 import ai.havencore.companion.push.PushChannel
+import ai.havencore.companion.push.PushManager
 import ai.havencore.companion.push.PushNotifier
 import android.app.Application
 import android.content.Context
@@ -43,4 +44,5 @@ class AppContainer(ctx: Context) {
     val pushApi = PushApi(http)
     val pushNotifier = PushNotifier(appContext)
     val deviceIdProvider = DeviceIdProvider(settings)
+    val pushManager = PushManager(appContext, settings, pushApi, deviceIdProvider)
 }

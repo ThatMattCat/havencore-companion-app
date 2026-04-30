@@ -3,6 +3,8 @@ package ai.havencore.companion.ui.settings
 import ai.havencore.companion.data.ServerConfig
 import ai.havencore.companion.data.SettingsRepository
 import ai.havencore.companion.net.ConversationsApi
+import ai.havencore.companion.push.PushManager
+import ai.havencore.companion.push.PushUi
 import ai.havencore.companion.voice.DefaultAssistantHelper
 import android.content.Context
 import androidx.lifecycle.ViewModel
@@ -11,8 +13,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import org.unifiedpush.android.connector.UnifiedPush
 
 sealed interface PingState {
     data object Untested : PingState
@@ -24,6 +28,7 @@ sealed interface PingState {
 class SettingsViewModel(
     private val repo: SettingsRepository,
     private val api: ConversationsApi,
+    private val pushManager: PushManager,
     private val appContext: Context,
 ) : ViewModel() {
 
@@ -40,8 +45,44 @@ class SettingsViewModel(
     private val _isAssistantHeld = MutableStateFlow(DefaultAssistantHelper.isHeld(appContext))
     val isAssistantHeld: StateFlow<Boolean> = _isAssistantHeld.asStateFlow()
 
+    private val refresh = MutableStateFlow(0)
+
+    val pushUi: StateFlow<PushUi> = combine(
+        repo.pushEnabledFlow,
+        repo.pushEndpointFlow,
+        repo.pushDistributorPkgFlow,
+        refresh,
+    ) { enabled, endpoint, pkg, _ ->
+        when {
+            UnifiedPush.getDistributors(appContext).isEmpty() -> PushUi.NoDistributor
+            !enabled -> PushUi.Disabled
+            endpoint != null && pkg != null -> PushUi.Ready(pkg, endpoint)
+            pkg != null -> PushUi.AwaitingEndpoint(pkg)
+            else -> PushUi.Failed("registration not started")
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = PushUi.Disabled,
+    )
+
     fun refreshAssistantHeld() {
         _isAssistantHeld.value = DefaultAssistantHelper.isHeld(appContext)
+    }
+
+    fun onResume() {
+        refresh.value++
+        refreshAssistantHeld()
+    }
+
+    fun togglePush(on: Boolean) {
+        viewModelScope.launch {
+            if (on) pushManager.enable() else pushManager.disable()
+        }
+    }
+
+    fun retryRegistration() {
+        viewModelScope.launch { pushManager.retryAgentRegistration() }
     }
 
     fun save(baseUrl: String, deviceName: String) {

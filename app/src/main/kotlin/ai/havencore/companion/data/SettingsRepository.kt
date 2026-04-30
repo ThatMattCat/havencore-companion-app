@@ -22,7 +22,10 @@ class SettingsRepository(context: Context) {
     private val keyLastSessionId = stringPreferencesKey("last_session_id")
     private val keyAutoSpeak = booleanPreferencesKey("auto_speak")
     private val keyAssistPromptSeen = booleanPreferencesKey("default_assistant_prompt_seen")
+    private val keyPushEnabled = booleanPreferencesKey("push_enabled")
     private val keyPushDeviceId = stringPreferencesKey("push_device_id")
+    private val keyPushEndpoint = stringPreferencesKey("push_endpoint")
+    private val keyPushDistributorPkg = stringPreferencesKey("push_distributor_pkg")
 
     val configFlow: Flow<ServerConfig> = store.data.map { prefs ->
         ServerConfig(
@@ -68,11 +71,38 @@ class SettingsRepository(context: Context) {
         store.edit { prefs -> prefs[keyAssistPromptSeen] = seen }
     }
 
+    val pushEnabledFlow: Flow<Boolean> = store.data.map { prefs -> prefs[keyPushEnabled] ?: false }
+
     val pushDeviceIdFlow: Flow<String?> = store.data.map { prefs -> prefs[keyPushDeviceId] }
+
+    val pushEndpointFlow: Flow<String?> = store.data.map { prefs -> prefs[keyPushEndpoint] }
+
+    val pushDistributorPkgFlow: Flow<String?> =
+        store.data.map { prefs -> prefs[keyPushDistributorPkg] }
 
     suspend fun pushDeviceId(): String? = pushDeviceIdFlow.first()
 
     suspend fun setPushDeviceId(id: String) {
         store.edit { prefs -> prefs[keyPushDeviceId] = id }
+    }
+
+    suspend fun setPushEnabled(on: Boolean) {
+        store.edit { prefs -> prefs[keyPushEnabled] = on }
+    }
+
+    suspend fun setPushEndpoint(url: String?) {
+        store.edit { prefs ->
+            if (url.isNullOrBlank()) prefs.remove(keyPushEndpoint) else prefs[keyPushEndpoint] = url
+        }
+    }
+
+    suspend fun setPushDistributorPkg(pkg: String?) {
+        store.edit { prefs ->
+            if (pkg.isNullOrBlank()) {
+                prefs.remove(keyPushDistributorPkg)
+            } else {
+                prefs[keyPushDistributorPkg] = pkg
+            }
+        }
     }
 }
