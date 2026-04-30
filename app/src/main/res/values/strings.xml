@@ -2,4 +2,17 @@
 <resources>
     <string name="app_name">HavenCore</string>
     <string name="assist_label">HavenCore</string>
+
+    <string name="notif_channel_name_autonomy">HavenCore autonomy</string>
+    <string name="notif_channel_desc_autonomy">Autonomy briefings, anomalies, reminders, and other agent-initiated notifications.</string>
+
+    <string name="push_card_title">Notifications</string>
+    <string name="push_card_body">HavenCore can wake your phone with autonomy briefings (dryer done, calendar reminders, anomalies). Requires a UnifiedPush distributor app — we recommend ntfy.</string>
+
+    <string name="push_setup_help_title">Setup help</string>
+    <string name="push_setup_help_step_1">Install ntfy from F-Droid, the Play Store, or https://ntfy.sh/app.</string>
+    <string name="push_setup_help_step_2">In ntfy, set your server URL (e.g. https://ntfy.example.com) or use https://ntfy.sh for testing.</string>
+    <string name="push_setup_help_step_3">In ntfy → Settings → battery → disable battery optimizations for the ntfy app. Samsung and other OEM devices aggressively kill background apps; ntfy must stay connected to receive pushes.</string>
+    <string name="push_setup_help_step_4">Optionally, do the same for HavenCore as belt-and-suspenders.</string>
+    <string name="push_setup_help_step_5">Come back here and toggle Enable notifications.</string>
 </resources>
