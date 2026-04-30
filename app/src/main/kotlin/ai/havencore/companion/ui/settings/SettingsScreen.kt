@@ -6,6 +6,7 @@ import ai.havencore.companion.voice.DefaultAssistantHelper
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -41,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,6 +53,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import java.util.UUID
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -135,11 +140,17 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
 
             HorizontalDivider()
 
-            // TEMP (Phase 4 commit 2): manually fires a notification so we
-            // can verify channel registration + tap-through routing before
-            // UnifiedPush is wired. Removed in commit 5 alongside the
-            // Notifications card landing.
-            TestNotificationButton()
+            // TEMP (Phase 4 commits 2/3): manually fire a notification and
+            // exercise the agent /api/push/register POST so we can verify
+            // both halves before UnifiedPush is wired. Removed in commit 5
+            // alongside the Notifications card landing.
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TestNotificationButton()
+                TestRegisterButton()
+            }
 
             HorizontalDivider()
 
@@ -195,6 +206,31 @@ private fun TestNotificationButton() {
         },
     ) {
         Text("Test notification")
+    }
+}
+
+@Composable
+private fun TestRegisterButton() {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    OutlinedButton(onClick = {
+        scope.launch {
+            val app = ctx.applicationContext as HavenCoreApp
+            val baseUrl = app.container.settings.configFlow.first().baseUrl
+            val r = app.container.pushApi.register(
+                baseUrl = baseUrl,
+                deviceId = UUID.randomUUID().toString(),
+                deviceLabel = "Debug",
+                endpoint = "https://example.invalid/UPxxx",
+            )
+            val msg = r.fold(
+                onSuccess = { "Test register ok" },
+                onFailure = { "Test register fail: ${it.message}" },
+            )
+            Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+        }
+    }) {
+        Text("Test register")
     }
 }
 

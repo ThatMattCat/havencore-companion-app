@@ -7,6 +7,7 @@ import ai.havencore.companion.net.ChatApi
 import ai.havencore.companion.net.ChatWsSession
 import ai.havencore.companion.net.ConversationsApi
 import ai.havencore.companion.net.HavenCoreClient
+import ai.havencore.companion.net.PushApi
 import ai.havencore.companion.net.SttApi
 import ai.havencore.companion.net.TtsApi
 import ai.havencore.companion.push.DeviceIdProvider
@@ -39,6 +40,7 @@ class AppContainer(ctx: Context) {
     val ttsPlayer = TtsPlayer(ctx)
 
     // Phase 4
+    val pushApi = PushApi(http)
     val pushNotifier = PushNotifier(appContext)
     val deviceIdProvider = DeviceIdProvider(settings)
 }
