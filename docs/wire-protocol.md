@@ -121,6 +121,100 @@ may silently downgrade an unsupported requested format (e.g. mp3) to
 WAV, so the response header is the source of truth, not the requested
 `format`. Empty/whitespace text rejected with 400.
 
+## Push (Phase 4)
+
+### Registration
+
+`POST /api/push/register` with snake-case JSON:
+
+```json
+{
+  "device_id": "<uuid>",
+  "device_label": "Matt's S24",
+  "endpoint": "https://ntfy.example.com/UPxxxxxxxxxxxx",
+  "platform": "android"
+}
+```
+
+Idempotent upsert on `device_id`. The companion app generates the
+UUIDv4 once on first push-enable and persists it in DataStore
+(`push_device_id`) — a fresh ID requires the user to clear app data or
+toggle push off/on through a future explicit reset path. `device_label`
+is the existing `device_name` setting.
+
+`DELETE /api/push/register/{device_id}` — 200 on success, 404 treated
+as success client-side. Best-effort on disable; if the LAN is down,
+the agent row goes stale and the agent's pruner cleans it up
+eventually (out of scope for this app — handled in the agent repo).
+
+### Push payload envelope
+
+UnifiedPush distributors deliver a single byte buffer (≤ 4096 bytes)
+containing the agent's JSON envelope. The companion app decodes with
+`ignoreUnknownKeys = true` so additive agent changes don't require an
+app release.
+
+```json
+{
+  "v": 1,
+  "type": "autonomy_brief" | "anomaly" | "reminder" | "act_confirm" | "ad_hoc",
+  "title": "Selene",
+  "body": "<= 3000 chars",
+  "session_id": "<uuid>" | null,
+  "severity": "none" | "info" | "warn" | "alert"
+}
+```
+
+- `v` is the schema version; the receiver tolerates unknown fields but
+  may drop unknown `v` values.
+- `type` is a surface category for future per-channel splitting; v1
+  routes everything through the single `havencore_autonomy` channel.
+- `severity` maps to `NotificationCompat` priority/vibration:
+  `alert`/`warn` → HIGH + vibration; `none`/`info` → DEFAULT. Respects
+  system DND (no bypass in v1).
+- `body` over 3000 chars is truncated agent-side to leave room inside
+  the 4 KB UnifiedPush envelope cap.
+- `session_id` is opaque; the app does not validate before using it as
+  a deep-link parameter (the chat screen's cold-resume path 404s
+  gracefully if the session is gone).
+
+### Tap-through
+
+Notifications carry a `PendingIntent` (`FLAG_IMMUTABLE` +
+`FLAG_UPDATE_CURRENT`) targeting `MainActivity` with
+`Intent.FLAG_ACTIVITY_CLEAR_TOP | FLAG_ACTIVITY_SINGLE_TOP` and
+`session_id` as a string extra (`PushNotifier.EXTRA_SESSION_ID =
+"session_id"`). The PendingIntent's request code is
+`sessionId.hashCode()` so concurrent pushes for distinct sessions
+don't collapse.
+
+`MainActivity` reads the extra in both `onCreate` (cold-launch) and
+`onNewIntent` (warm), feeding it into a `MutableStateFlow<String?>`.
+`HavenNav`'s `LaunchedEffect` keyed on the value navigates to
+`chat?sessionId=<sid>` with `popUpTo("history") { inclusive = false }`
++ `launchSingleTop = true` so a back-press from the deep-linked chat
+lands on the home destination, then clears the flow.
+
+A push without `session_id` foregrounds the app to whatever route was
+last shown (no nav change).
+
+### Distributor agnosticism
+
+The companion app calls `UnifiedPush.register(ctx, INSTANCE_DEFAULT)`
+and `UnifiedPush.unregister(ctx, INSTANCE_DEFAULT)` — the connector
+library handles distributor selection (the user's saved choice via
+`UnifiedPush.saveDistributor`). The endpoint URL the distributor
+returns via `onNewEndpoint` is self-contained — the agent stores it
+verbatim and POSTs payloads to it. There is no `NTFY_BASE_URL` env var
+on the agent and no ntfy URL field in the companion app; the user
+configures their server URL inside the ntfy app.
+
+`MessagingReceiver` callbacks run on the binder thread; `onMessage`
+posts the notification synchronously (no network), and the lifecycle
+callbacks (`onNewEndpoint` / `onRegistrationFailed` / `onUnregistered`)
+use `goAsync()` + `Dispatchers.IO` to stay inside the broadcast's
+~10-second window while round-tripping to the agent.
+
 ## Auth and transport
 
 CORS is `*` and there is no auth middleware on `/api/*` or the WS. App

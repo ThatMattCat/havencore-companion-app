@@ -14,10 +14,11 @@ UnifiedPush + ntfy. The agent itself lives in the sibling repo at
 
 **Phases 0 (settings + connectivity probe), 1 (text chat over `/ws/chat`
 + history list with resume), 2 (in-app push-to-talk voice over
-`/api/stt/transcribe` and `/api/tts/speak`), and 3 (default-assistant
+`/api/stt/transcribe` and `/api/tts/speak`), 3 (default-assistant
 slot via `VoiceInteractionService` — long-press home / power, lockscreen,
-and `Intent.ACTION_ASSIST`) are all complete and verified end-to-end on
-a real phone.** Master plan at
+and `Intent.ACTION_ASSIST`), and 4 (UnifiedPush + ntfy push notifications
+with deep-link tap-through to chat) are all complete and verified
+end-to-end on a real phone.** Master plan at
 `/home/matt/.claude/plans/we-should-have-a-functional-orbit.md`. Phase 0
 acceptance plan at
 `/home/matt/.claude/plans/we-previously-planned-stateful-tarjan.md`. Phase 1
@@ -25,9 +26,18 @@ acceptance plan at
 `/home/matt/.claude/plans/replicated-spinning-sundae.md`. Phase 2
 acceptance plan at
 `/home/matt/.claude/plans/i-want-to-misty-wind.md`. Phase 3 acceptance
-plan at `/home/matt/.claude/plans/i-want-to-rosy-finch.md`.
+plan at `/home/matt/.claude/plans/i-want-to-rosy-finch.md`. Phase 4
+acceptance plan at `/home/matt/.claude/plans/i-want-to-quiet-thunder.md`.
 
-Phase 4 (UnifiedPush + ntfy push notifications) is the next phase.
+Phase 4 OEM gotcha (Samsung et al.): the *distributor* (ntfy app) holds
+the long-lived socket to the ntfy server, not us — so background-app
+limits hit ntfy first. Setup help in Settings directs users to exempt
+ntfy from battery optimization; HavenCore exemption is belt-and-
+suspenders only (broadcasts wake our cold-killed package via the
+manifest-registered `PushReceiver` already). Phase 4 also pinned the
+UnifiedPush connector at 3.0.10 deliberately — the 3.1+ line requires
+a Kotlin stdlib bump beyond our pinned 2.0.21, which is its own
+deliberate decision.
 
 Phase 3 OEM gotcha (Samsung): the Digital Assistant role picker on
 Samsung filters out a `VoiceInteractionService` whose package does not
@@ -48,7 +58,11 @@ instead.
   be the only BT mic routing path (no `startBluetoothSco` fallback)
 - OkHttp 4.12 + kotlinx-serialization-json 1.7.3
 - Navigation Compose 2.8.4 — three routes: `settings` / `history` /
-  `chat?sessionId={sessionId}`
+  `chat?sessionId={sessionId}`. Push tap-through deep-links into the
+  third via a `pendingSessionId` `StateFlow` MainActivity owns and
+  HavenNav consumes in a `LaunchedEffect`.
+- UnifiedPush connector 3.0.10 — pinned to the Kotlin-2.0.21-compatible
+  3.0.x patch line; 3.1+ requires Kotlin stdlib 2.2+
 - Jetpack DataStore (Preferences) for persisted settings (incl.
   `last_session_id`, written on every WS `session` event)
 - Manual DI (no Hilt) — `AppContainer` instantiated in `HavenCoreApp.onCreate()`
@@ -68,7 +82,7 @@ script discovers it via mDNS so most days you never touch IPs.
 source scripts/adb-env.sh        # PATHs + mDNS-discover + adb connect
 ./gradlew installDebug           # build + push to phone in one step
 adb shell am start -n ai.havencore.companion/.MainActivity
-adb logcat | grep -i 'havencore\|ChatWs\|ChatVM\|MicRec\|TtsPlay\|Voice:VIS\|Voice:Sess'   # tail logs
+adb logcat | grep -i 'havencore\|ChatWs\|ChatVM\|MicRec\|TtsPlay\|Voice:VIS\|Voice:Sess\|Push:Recv\|Push:Reg\|Push:Api'   # tail logs
 ```
 
 Override discovery if mDNS is blocked: `PHONE_HOST=10.0.0.115:39961 source scripts/adb-env.sh`.
@@ -95,11 +109,11 @@ one device/emulator".
 
 ```
 app/src/main/kotlin/ai/havencore/companion/
-├── HavenCoreApp.kt              # Application class — manual DI container (incl. appContext)
-├── MainActivity.kt              # single-activity Compose host (delegates to HavenNav)
+├── HavenCoreApp.kt              # Application class — manual DI container (incl. appContext, push channel registration)
+├── MainActivity.kt              # single-activity Compose host (delegates to HavenNav); onNewIntent feeds EXTRA_SESSION_ID into pendingSessionId StateFlow
 ├── data/
 │   ├── ServerConfig.kt
-│   └── SettingsRepository.kt    # DataStore<Preferences>: baseUrl, deviceName, lastSessionId, autoSpeak, default_assistant_prompt_seen
+│   └── SettingsRepository.kt    # DataStore<Preferences>: baseUrl, deviceName, lastSessionId, autoSpeak, default_assistant_prompt_seen, push_enabled, push_device_id, push_endpoint, push_distributor_pkg
 ├── audio/
 │   ├── MicRecorder.kt           # AAC-in-MP4 capture with peak-amplitude polling for hasSpeech() gate
 │   └── TtsPlayer.kt             # Media3 ExoPlayer wrapper for TTS playback
@@ -110,7 +124,15 @@ app/src/main/kotlin/ai/havencore/companion/
 │   ├── ChatApi.kt               # history list + resume REST
 │   ├── ChatWsSession.kt         # WS supervisor with reconnect ladder
 │   ├── SttApi.kt                # POST /api/stt/transcribe multipart upload
-│   └── TtsApi.kt                # POST /api/tts/speak
+│   ├── TtsApi.kt                # POST /api/tts/speak
+│   └── PushApi.kt               # POST/DELETE /api/push/register (Phase 4)
+├── push/                        # Phase 4 — UnifiedPush + ntfy
+│   ├── PushChannel.kt                  # havencore_autonomy notification channel
+│   ├── PushPayload.kt                  # @Serializable envelope + tolerant parser
+│   ├── PushNotifier.kt                 # NotificationCompat builder; severity -> priority/vibration; tap PendingIntent w/ EXTRA_SESSION_ID
+│   ├── PushReceiver.kt                 # MessagingReceiver — onMessage / onNewEndpoint / onRegistrationFailed / onUnregistered
+│   ├── PushManager.kt                  # orchestrates UnifiedPush.register/unregister + agent register/deregister; PushUi sealed state
+│   └── DeviceIdProvider.kt             # generate-or-read UUIDv4 in DataStore
 ├── voice/                       # Phase 3 — default-assistant slot
 │   ├── HavenAssistService.kt           # VoiceInteractionService (logs only)
 │   ├── HavenAssistSessionService.kt    # VoiceInteractionSessionService (factory)
@@ -133,7 +155,7 @@ app/src/main/kotlin/ai/havencore/companion/
     └── theme/{Color.kt, Theme.kt, Type.kt}
 ```
 
-Future surfaces per master plan: `push/` (UnifiedPush + ntfy), `ui/todo/`.
+Future surfaces per master plan: `ui/todo/`.
 
 ## Backend the app talks to
 
@@ -149,6 +171,11 @@ Currently consumed:
   no `RESPONSE_CHUNK`, `session_id` honored only on first frame, etc.)
 - `POST /api/stt/transcribe` — Phase 2, multipart audio upload
 - `POST /api/tts/speak` — Phase 2, JSON body with text + voice/format/speed
+- `POST /api/push/register`, `DELETE /api/push/register/{device_id}` —
+  Phase 4, agent stores a `(device_id, device_label, endpoint)` row per
+  registered device. Body is snake_case JSON (`device_id`, `device_label`,
+  `endpoint`, `platform`); the agent's `NtfyNotifier` later POSTs the
+  push payload directly to each row's `endpoint`.
 
 Phase 3 reuses all of the above; the assist session opens its own
 `ChatWsSession` so the foreground chat WS is not knocked off, but binds
@@ -156,6 +183,15 @@ to the same `lastSessionId` so voice-from-assist turns land in History
 next to typed/voice-in-app turns. The authoritative source for the
 agent's HTTP / WS surfaces is
 `/home/matt/code/havencore/services/agent/selene_agent/api/`.
+
+Phase 4 is **inbound-only** push: the agent fans out to registered
+endpoints (URLs the user's UnifiedPush distributor produced), the ntfy
+server forwards bytes byte-for-byte to the distributor, the distributor
+broadcasts to our `PushReceiver`. The companion app does not run a
+foreground service or hold its own socket — that's the architectural
+advantage of UnifiedPush. Tap-through deep-links into
+`chat?sessionId={sessionId}` if the payload includes `session_id`,
+otherwise just foregrounds the app.
 
 CORS is `*` and there is no auth on `/api/*` — the app is LAN-only; cleartext
 is permitted globally via `network_security_config.xml`. Tighten when remote

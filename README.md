@@ -5,13 +5,15 @@ self-hosted AI smart-home assistant. Eventually delivers in-app voice chat, the
 Android default-assistant slot (long-press home / power), and push
 notifications for autonomy briefings via UnifiedPush + ntfy.
 
-**Phases 0-3 are shipped**: text chat over `/ws/chat` with history + resume,
+**Phases 0-4 are shipped**: text chat over `/ws/chat` with history + resume,
 in-app push-to-talk voice over `/api/stt/transcribe` and `/api/tts/speak`,
-and the Android default-assistant slot via `VoiceInteractionService` —
-long-press home / power, lockscreen, or `Intent.ACTION_ASSIST` route a
-single round trip through HavenCore (mic → STT → `/ws/chat` → TTS) into a
-bottom-sheet overlay. Voice turns from any entry point land in the same
-History row.
+the Android default-assistant slot via `VoiceInteractionService`
+(long-press home / power, lockscreen, or `Intent.ACTION_ASSIST` route a
+single round trip through HavenCore — mic → STT → `/ws/chat` → TTS — into
+a bottom-sheet overlay), and inbound push via UnifiedPush + ntfy with
+deep-link tap-through to chat. Voice turns from any entry point land in
+the same History row; push notifications with a `session_id` deep-link
+to the originating thread.
 
 ## Status
 
@@ -20,8 +22,8 @@ History row.
 | 0     | Repo scaffold, settings screen, `/api/conversations` health check    | shipped      |
 | 1     | Text chat over `/ws/chat`, history list, resume                      | shipped      |
 | 2     | In-app voice (push-to-talk over STT/TTS HTTP)                        | shipped      |
-| 3     | `VoiceInteractionService` — Android default-assistant slot           | **shipped**  |
-| 4     | Push via UnifiedPush + self-hosted ntfy                              | next         |
+| 3     | `VoiceInteractionService` — Android default-assistant slot           | shipped      |
+| 4     | Push via UnifiedPush + self-hosted ntfy                              | **shipped**  |
 | 5     | Todo / shopping list (blocked on `todo.*` MCP work)                  | planned      |
 
 Master plan + architecture decisions live alongside the agent code.
@@ -69,7 +71,7 @@ wiped or the server's adb keys change.
 source scripts/adb-env.sh                                     # PATHs + mDNS-discover + adb connect
 ./gradlew installDebug                                        # build + push to phone
 adb shell am start -n ai.havencore.companion/.MainActivity    # launch
-adb logcat | grep -i 'havencore\|ChatWs\|ChatVM\|MicRec\|TtsPlay\|Voice:VIS\|Voice:Sess'   # tail logs
+adb logcat | grep -i 'havencore\|ChatWs\|ChatVM\|MicRec\|TtsPlay\|Voice:VIS\|Voice:Sess\|Push:Recv\|Push:Reg\|Push:Api'   # tail logs
 ```
 
 The phone's _connect_ port (separate from the pair port) rotates every time
@@ -134,6 +136,50 @@ the typed and voice-in-app turns.
 The assist overlay's mic capture is user-stopped — tap the Stop button
 in the overlay to release the mic. VAD-based auto-stop is deferred to
 the multi-turn redesign.
+
+### Push notifications
+
+HavenCore wakes your phone with autonomy briefings ("the dryer is done",
+"your 9am starts in 10 minutes", "garage door has been open for 2
+hours") via [UnifiedPush](https://unifiedpush.org/). Tapping a
+notification deep-links to the originating chat thread — the same
+session id appears in History.
+
+The companion app is distributor-agnostic; we recommend
+[**ntfy**](https://ntfy.sh/) because it's self-hostable and matches
+HavenCore's ethos, but any UnifiedPush distributor (NextPush, FCMUP,
+embedded FCM) works without app changes.
+
+#### One-time setup
+
+1. **Install the ntfy Android app** from
+   [F-Droid](https://f-droid.org/en/packages/io.heckel.ntfy/), the Play
+   Store, or `https://ntfy.sh/app`.
+2. **Point ntfy at your server** — open the ntfy app, set Default
+   server URL to your self-hosted instance (e.g. `https://ntfy.lan` or
+   `http://10.0.0.x:8585`), or leave it pointing at the public
+   `https://ntfy.sh` for testing.
+3. **Exempt ntfy from battery optimization** — Android Settings → Apps
+   → ntfy → Battery → **Unrestricted**. The ntfy app holds the
+   long-lived socket to the ntfy server; aggressive OEM background
+   limits (especially Samsung One UI) will silently kill it otherwise.
+   Optionally do the same for HavenCore as belt-and-suspenders.
+4. **In HavenCore Settings → Notifications**, flip Enable
+   notifications. Approve the `POST_NOTIFICATIONS` permission prompt
+   on Android 13+. Status flips from `Awaiting endpoint` to `Ready` in
+   ~1 s — the masked endpoint URL is visible underneath.
+
+#### What's wired
+
+The agent fans out push payloads to each registered device's endpoint;
+the ntfy server forwards bytes byte-for-byte to the ntfy app on the
+phone, which broadcasts to HavenCore's `PushReceiver`. Severity maps to
+notification priority: `none` / `info` → default, `warn` → high +
+short vibration, `alert` → high + long pulsing vibration. System
+Do-Not-Disturb is respected (no DND bypass in v1).
+
+The wire format and the `session_id` deep-link contract are documented
+in [`docs/wire-protocol.md`](docs/wire-protocol.md).
 
 ## Configuration
 
