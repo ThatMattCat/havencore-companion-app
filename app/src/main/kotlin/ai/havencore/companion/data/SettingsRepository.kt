@@ -6,6 +6,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -26,6 +27,7 @@ class SettingsRepository(context: Context) {
     private val keyPushDeviceId = stringPreferencesKey("push_device_id")
     private val keyPushEndpoint = stringPreferencesKey("push_endpoint")
     private val keyPushDistributorPkg = stringPreferencesKey("push_distributor_pkg")
+    private val keySilenceTimeoutMs = longPreferencesKey("silence_timeout_ms")
 
     val configFlow: Flow<ServerConfig> = store.data.map { prefs ->
         ServerConfig(
@@ -104,5 +106,22 @@ class SettingsRepository(context: Context) {
                 prefs[keyPushDistributorPkg] = pkg
             }
         }
+    }
+
+    val silenceTimeoutMsFlow: Flow<Long> =
+        store.data.map { prefs -> prefs[keySilenceTimeoutMs] ?: DEFAULT_SILENCE_TIMEOUT_MS }
+
+    suspend fun silenceTimeoutMs(): Long = silenceTimeoutMsFlow.first()
+
+    suspend fun setSilenceTimeoutMs(ms: Long) {
+        val clamped = ms.coerceIn(MIN_SILENCE_TIMEOUT_MS, MAX_SILENCE_TIMEOUT_MS)
+        store.edit { prefs -> prefs[keySilenceTimeoutMs] = clamped }
+    }
+
+    companion object {
+        const val DEFAULT_SILENCE_TIMEOUT_MS = 2000L
+        const val MIN_SILENCE_TIMEOUT_MS = 600L
+        const val MAX_SILENCE_TIMEOUT_MS = 4000L
+        const val SILENCE_TIMEOUT_STEP_MS = 200L
     }
 }

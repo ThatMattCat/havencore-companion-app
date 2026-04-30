@@ -1,6 +1,7 @@
 package ai.havencore.companion.ui.settings
 
 import ai.havencore.companion.R
+import ai.havencore.companion.data.SettingsRepository
 import ai.havencore.companion.push.PushUi
 import ai.havencore.companion.voice.DefaultAssistantHelper
 import android.Manifest
@@ -36,6 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -63,6 +65,7 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
     val ping by vm.ping.collectAsState()
     val isAssistantHeld by vm.isAssistantHeld.collectAsState()
     val pushUi by vm.pushUi.collectAsState()
+    val silenceTimeoutMs by vm.silenceTimeoutMs.collectAsState()
 
     val ctx = LocalContext.current
 
@@ -104,6 +107,11 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                 onLaunchPicker = {
                     ctx.startActivity(DefaultAssistantHelper.pickerIntent())
                 },
+            )
+
+            VoiceCard(
+                silenceTimeoutMs = silenceTimeoutMs,
+                onChange = vm::setSilenceTimeoutMs,
             )
 
             NotificationsCard(
@@ -168,6 +176,50 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                     color = MaterialTheme.colorScheme.error,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun VoiceCard(
+    silenceTimeoutMs: Long,
+    onChange: (Long) -> Unit,
+) {
+    // Slider works in float seconds; snap to SILENCE_TIMEOUT_STEP_MS,
+    // then convert back to ms on commit.
+    val minMs = SettingsRepository.MIN_SILENCE_TIMEOUT_MS
+    val maxMs = SettingsRepository.MAX_SILENCE_TIMEOUT_MS
+    val stepMs = SettingsRepository.SILENCE_TIMEOUT_STEP_MS
+    val steps = ((maxMs - minMs) / stepMs).toInt() - 1  // exclusive of endpoints
+    val seconds = silenceTimeoutMs / 1000f
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "Voice",
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = "How long the assistant overlay waits in silence before it stops listening and processes what you said.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                text = "Auto-stop after %.1f s".format(seconds),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Slider(
+                value = seconds,
+                onValueChange = { v ->
+                    val ms = (Math.round(v * 1000f / stepMs) * stepMs).toLong()
+                        .coerceIn(minMs, maxMs)
+                    onChange(ms)
+                },
+                valueRange = (minMs / 1000f)..(maxMs / 1000f),
+                steps = steps,
+            )
         }
     }
 }

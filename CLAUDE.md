@@ -113,9 +113,9 @@ app/src/main/kotlin/ai/havencore/companion/
 ├── MainActivity.kt              # single-activity Compose host (delegates to HavenNav); onNewIntent feeds EXTRA_SESSION_ID into pendingSessionId StateFlow
 ├── data/
 │   ├── ServerConfig.kt
-│   └── SettingsRepository.kt    # DataStore<Preferences>: baseUrl, deviceName, lastSessionId, autoSpeak, default_assistant_prompt_seen, push_enabled, push_device_id, push_endpoint, push_distributor_pkg
+│   └── SettingsRepository.kt    # DataStore<Preferences>: baseUrl, deviceName, lastSessionId, autoSpeak, default_assistant_prompt_seen, push_enabled, push_device_id, push_endpoint, push_distributor_pkg, silence_timeout_ms
 ├── audio/
-│   ├── MicRecorder.kt           # AAC-in-MP4 capture with peak-amplitude polling for hasSpeech() gate
+│   ├── MicRecorder.kt           # AAC-in-MP4 capture with peak-amplitude polling for hasSpeech() gate; exposes currentAmplitude for live endpointing
 │   └── TtsPlayer.kt             # Media3 ExoPlayer wrapper for TTS playback
 ├── net/
 │   ├── HavenCoreClient.kt       # shared OkHttp client builder
@@ -136,7 +136,7 @@ app/src/main/kotlin/ai/havencore/companion/
 ├── voice/                       # Phase 3 — default-assistant slot
 │   ├── HavenAssistService.kt           # VoiceInteractionService (logs only)
 │   ├── HavenAssistSessionService.kt    # VoiceInteractionSessionService (factory)
-│   ├── HavenAssistSession.kt           # VoiceInteractionSession — orchestrates round-trip
+│   ├── HavenAssistSession.kt           # VoiceInteractionSession — orchestrates round-trip; auto-endpoints mic via currentAmplitude (configurable silence timeout, 15s hard cap)
 │   ├── HavenStubRecognitionService.kt  # no-op RecognitionService (Samsung filter satisfaction)
 │   ├── DefaultAssistantHelper.kt       # RoleManager wrapper
 │   ├── AssistUiState.kt                # Phase enum + state
@@ -210,13 +210,6 @@ unicode.
   `feat(chat):`, `fix(net):`, `docs:`, `chore:`. Same
   `Co-Authored-By: Claude` trailer on AI-assisted commits. Branch off `main`,
   squash-merge style.
-- **Phased commit cadence**: when working through a plan file's numbered
-  build sequence, do one step at a time — write files, run
-  `./gradlew :app:assembleDebug` to confirm it builds, show the diff with a
-  per-file summary, wait for explicit approval, then commit. Each commit is
-  a clean rollback point. Bundle in-flight fixes (e.g. amending an earlier
-  file) into the current commit and call them out in the diff summary
-  rather than rewriting history.
 - **No emojis in code or docs** unless explicitly requested.
 - **License**: LGPL-2.1, mirroring havencore. Don't change without asking.
 

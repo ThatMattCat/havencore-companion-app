@@ -39,6 +39,17 @@ class SettingsViewModel(
             initialValue = ServerConfig(baseUrl = "", deviceName = ""),
         )
 
+    val silenceTimeoutMs: StateFlow<Long> =
+        repo.silenceTimeoutMsFlow.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = SettingsRepository.DEFAULT_SILENCE_TIMEOUT_MS,
+        )
+
+    fun setSilenceTimeoutMs(ms: Long) {
+        viewModelScope.launch { repo.setSilenceTimeoutMs(ms) }
+    }
+
     private val _ping = MutableStateFlow<PingState>(PingState.Untested)
     val ping: StateFlow<PingState> = _ping.asStateFlow()
 

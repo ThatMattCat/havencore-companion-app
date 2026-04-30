@@ -28,6 +28,7 @@ import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -36,13 +37,16 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
  * Per-invocation overlay session orchestrating the full round-trip:
  * RECORD_AUDIO gate → settings → WS connect (fresh ChatWsSession sharing
  * the OkHttp client, bound to lastSessionId) → mic capture under
- * Phase.Listening (user-stopped via the overlay's Stop button) →
+ * Phase.Listening (auto-stopped after `silenceTimeoutMs` of sub-threshold
+ * amplitude once speech is detected, capped at HARD_CAP_MS, with the
+ * overlay's Stop button as manual override) →
  * MicRecorder.State.Stopped.hasSpeech() gate → STT →
  * `ws.send(transcript)` → reduce inbound frames into Phase.Thinking /
  * tool count chip / Phase.Replying → TtsApi.speak → TtsPlayer.play →
@@ -60,6 +64,7 @@ class HavenAssistSession(context: Context) : VoiceInteractionSession(context) {
     private val state = MutableStateFlow(AssistUiState())
     private val sessionScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val ws by lazy { ChatWsSession(app.http) }
+    private var silenceWatcher: Job? = null
 
     private lateinit var lifecycleOwner: AssistLifecycleOwner
     private lateinit var cfg: ServerConfig
@@ -122,6 +127,7 @@ class HavenAssistSession(context: Context) : VoiceInteractionSession(context) {
 
     override fun onDestroy() {
         Log.i(TAG, "session onDestroy")
+        silenceWatcher?.cancel()
         sessionScope.cancel()
         runCatching { ws.close() }
         runCatching { app.mic.cancel() }
@@ -177,6 +183,7 @@ class HavenAssistSession(context: Context) : VoiceInteractionSession(context) {
             // 4. Reset the shared MicRecorder so a stale Stopped from a
             //    prior chat-screen capture does not race the collector.
             app.mic.cancel()
+            val silenceTimeoutMs = app.settings.silenceTimeoutMs()
             state.update { it.copy(phase = Phase.Listening) }
             app.mic.start().onFailure { t ->
                 Log.w(TAG, "mic start failed", t)
@@ -188,11 +195,19 @@ class HavenAssistSession(context: Context) : VoiceInteractionSession(context) {
                 return@launch
             }
 
-            // 5. Wait for the user to tap Stop (which calls app.mic.stop()
-            //    and produces a Stopped event).
+            // 5. Auto-endpoint: poll currentAmplitude; once we hear speech,
+            //    stop after silenceTimeoutMs of sub-threshold readings.
+            //    HARD_CAP_MS is a safety net for "spoke but never paused"
+            //    or "never spoke at all". Stop button still works in
+            //    parallel via stopMicFromOverlay().
+            silenceWatcher = launchSilenceWatcher(silenceTimeoutMs)
+
+            // 6. Wait for any path (auto, manual Stop, hard cap) to land
+            //    a Stopped frame.
             val stopped = app.mic.state
                 .filterIsInstance<MicRecorder.State.Stopped>()
                 .first()
+            silenceWatcher?.cancel()
             onMicStopped(stopped)
         }
     }
@@ -204,6 +219,32 @@ class HavenAssistSession(context: Context) : VoiceInteractionSession(context) {
             }
         }
     }
+
+    private fun launchSilenceWatcher(silenceTimeoutMs: Long): Job =
+        sessionScope.launch {
+            val startedAt = System.currentTimeMillis()
+            var lastSpeechAt: Long? = null
+            while (isActive) {
+                delay(WATCHER_POLL_INTERVAL_MS)
+                // Bail if the recorder transitioned out of Recording —
+                // manual Stop, error, or our own auto-stop below.
+                if (app.mic.state.value !is MicRecorder.State.Recording) return@launch
+                val now = System.currentTimeMillis()
+                val amp = app.mic.currentAmplitude.value
+                if (amp >= MicRecorder.MIN_PEAK_AMPLITUDE) lastSpeechAt = now
+                if (now - startedAt >= HARD_CAP_MS) {
+                    Log.i(TAG, "silence watcher: hard cap (${HARD_CAP_MS}ms), stopping")
+                    app.mic.stop()
+                    return@launch
+                }
+                val sinceSpeech = lastSpeechAt?.let { now - it } ?: continue
+                if (sinceSpeech >= silenceTimeoutMs) {
+                    Log.i(TAG, "silence watcher: ${silenceTimeoutMs}ms quiet after speech, stopping")
+                    app.mic.stop()
+                    return@launch
+                }
+            }
+        }
 
     private suspend fun onMicStopped(stopped: MicRecorder.State.Stopped) {
         if (!stopped.hasSpeech()) {
@@ -316,5 +357,7 @@ class HavenAssistSession(context: Context) : VoiceInteractionSession(context) {
 
     private companion object {
         const val TAG = "Voice:Sess"
+        const val WATCHER_POLL_INTERVAL_MS = 100L
+        const val HARD_CAP_MS = 15_000L
     }
 }

@@ -57,6 +57,11 @@ class MicRecorder(private val ctx: Context) {
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state.asStateFlow()
 
+    // Latest poll reading (not the running peak). Consumers like
+    // HavenAssistSession's silence watcher use this for endpointing.
+    private val _currentAmplitude = MutableStateFlow(0)
+    val currentAmplitude: StateFlow<Int> = _currentAmplitude.asStateFlow()
+
     private val audioManager: AudioManager =
         ctx.getSystemService(AudioManager::class.java)
 
@@ -119,6 +124,7 @@ class MicRecorder(private val ctx: Context) {
         pollJob?.cancelAndJoin()
         pollJob = null
         val peak = peakAmplitude.getAndSet(0)
+        _currentAmplitude.value = 0
         runCatching {
             rec.stop()
             rec.release()
@@ -141,6 +147,7 @@ class MicRecorder(private val ctx: Context) {
         pollJob?.cancel()
         pollJob = null
         peakAmplitude.set(0)
+        _currentAmplitude.value = 0
         val rec = recorder
         if (rec != null) {
             runCatching { rec.stop() }
@@ -152,6 +159,7 @@ class MicRecorder(private val ctx: Context) {
 
     private fun startAmplitudePoll(rec: MediaRecorder) {
         peakAmplitude.set(0)
+        _currentAmplitude.value = 0
         // Documented behavior: the first call after start() returns 0 — discard.
         runCatching { rec.maxAmplitude }
         pollJob = pollScope.launch {
@@ -159,6 +167,7 @@ class MicRecorder(private val ctx: Context) {
                 delay(POLL_INTERVAL_MS)
                 val cur = runCatching { rec.maxAmplitude }.getOrDefault(0)
                 if (cur > peakAmplitude.get()) peakAmplitude.set(cur)
+                _currentAmplitude.value = cur
             }
         }
     }
@@ -167,6 +176,7 @@ class MicRecorder(private val ctx: Context) {
         pollJob?.cancel()
         pollJob = null
         peakAmplitude.set(0)
+        _currentAmplitude.value = 0
     }
 
     private fun cleanup(deleteFile: Boolean) {
@@ -223,13 +233,16 @@ class MicRecorder(private val ctx: Context) {
         ContextCompat.checkSelfPermission(ctx, Manifest.permission.BLUETOOTH_CONNECT) ==
             PackageManager.PERMISSION_GRANTED
 
-    private companion object {
-        const val TAG = "MicRec"
+    companion object {
+        private const val TAG = "MicRec"
         const val ONE_HOUR_MS = 60L * 60L * 1000L
         const val MIN_DURATION_MS = 600L
-        // Calibrated 2026-04-29 against ambient room noise; tune per the
-        // verify step if quiet speech is being false-gated.
-        const val MIN_PEAK_AMPLITUDE = 800
+        // Calibrated 2026-04-30 against ambient room noise; user's quiet
+        // speech registered just over 2000 in testing, so 1200 leaves
+        // headroom while still rejecting room tone. Used both for
+        // post-stop hasSpeech() gating and for the assist session's
+        // silence-watcher endpointing threshold.
+        const val MIN_PEAK_AMPLITUDE = 1200
         const val POLL_INTERVAL_MS = 100L
     }
 }
