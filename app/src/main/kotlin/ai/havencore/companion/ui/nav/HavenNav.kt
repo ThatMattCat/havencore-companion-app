@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
@@ -24,10 +26,16 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 
 @Composable
-fun HavenNav(container: AppContainer) {
+fun HavenNav(
+    container: AppContainer,
+    pendingSessionId: StateFlow<String?> = MutableStateFlow(null),
+    onSessionIdConsumed: () -> Unit = {},
+) {
     // Read the persisted ServerConfig once before deciding the start
     // destination; otherwise collectAsState's synchronous initial value would
     // route returning users with a saved baseUrl through Settings briefly on
@@ -44,6 +52,20 @@ fun HavenNav(container: AppContainer) {
 
     val nav = rememberNavController()
     val start = if (cfg.baseUrl.isBlank()) "settings" else "history"
+
+    // Tap-through from a push notification: MainActivity sets the StateFlow
+    // from EXTRA_SESSION_ID (cold-start via onCreate, warm via onNewIntent).
+    // popUpTo("history") collapses any chat screen already on the stack so a
+    // back-press from the deep-linked chat lands on the home destination.
+    val pendingSid by pendingSessionId.collectAsState()
+    LaunchedEffect(pendingSid) {
+        val sid = pendingSid ?: return@LaunchedEffect
+        nav.navigate("chat?sessionId=$sid") {
+            popUpTo("history") { inclusive = false }
+            launchSingleTop = true
+        }
+        onSessionIdConsumed()
+    }
 
     NavHost(navController = nav, startDestination = start) {
 
