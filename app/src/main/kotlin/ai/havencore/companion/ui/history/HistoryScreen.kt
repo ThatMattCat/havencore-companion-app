@@ -3,6 +3,8 @@ package ai.havencore.companion.ui.history
 import ai.havencore.companion.net.ConversationSummary
 import ai.havencore.companion.net.deviceName
 import ai.havencore.companion.net.rollingSummaryPreview
+import ai.havencore.companion.ui.components.HeroDisc
+import ai.havencore.companion.ui.theme.HavenTokens
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
@@ -109,26 +112,25 @@ private fun EmptyState() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(32.dp),
+            .padding(HavenTokens.Spacing.xxl),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(
-            Icons.Default.ChatBubbleOutline,
-            contentDescription = null,
-            modifier = Modifier.size(48.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        HeroDisc(
+            icon = Icons.Default.ChatBubbleOutline,
+            discColor = MaterialTheme.colorScheme.secondaryContainer,
+            iconColor = MaterialTheme.colorScheme.onSecondaryContainer,
         )
         Text(
             "No conversations yet",
             style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(top = 12.dp),
+            modifier = Modifier.padding(top = HavenTokens.Spacing.md),
         )
         Text(
             "Tap + to start one",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 4.dp),
+            modifier = Modifier.padding(top = HavenTokens.Spacing.xs),
         )
     }
 }
@@ -138,21 +140,27 @@ private fun ErrorState(message: String, onRetry: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(32.dp),
+            .padding(HavenTokens.Spacing.xxl),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
+        HeroDisc(
+            icon = Icons.Default.ErrorOutline,
+            discColor = MaterialTheme.colorScheme.errorContainer,
+            iconColor = MaterialTheme.colorScheme.onErrorContainer,
+        )
         Text(
             text = "Couldn't load conversations.",
             style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(top = HavenTokens.Spacing.md),
         )
         Text(
             text = message,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.error,
-            modifier = Modifier.padding(top = 8.dp),
+            modifier = Modifier.padding(top = HavenTokens.Spacing.sm),
         )
-        Button(onClick = onRetry, modifier = Modifier.padding(top = 16.dp)) {
+        Button(onClick = onRetry, modifier = Modifier.padding(top = HavenTokens.Spacing.lg)) {
             Text("Retry")
         }
     }

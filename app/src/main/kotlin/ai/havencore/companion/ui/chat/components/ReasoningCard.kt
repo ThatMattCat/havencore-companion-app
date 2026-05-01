@@ -1,6 +1,7 @@
 package ai.havencore.companion.ui.chat.components
 
 import ai.havencore.companion.ui.chat.TurnEvent
+import ai.havencore.companion.ui.theme.HavenTokens
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -35,10 +36,10 @@ fun ReasoningCard(reasoning: TurnEvent.Reasoning, modifier: Modifier = Modifier)
             .fillMaxWidth()
             .clickable { expanded = !expanded },
     ) {
-        Column(modifier = Modifier.padding(8.dp)) {
+        Column(modifier = Modifier.padding(HavenTokens.Spacing.sm)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.sm),
             ) {
                 Icon(
                     Icons.Default.Lightbulb,
@@ -58,7 +59,7 @@ fun ReasoningCard(reasoning: TurnEvent.Reasoning, modifier: Modifier = Modifier)
             if (expanded) {
                 Text(
                     text = reasoning.content,
-                    modifier = Modifier.padding(top = 8.dp),
+                    modifier = Modifier.padding(top = HavenTokens.Spacing.sm),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }

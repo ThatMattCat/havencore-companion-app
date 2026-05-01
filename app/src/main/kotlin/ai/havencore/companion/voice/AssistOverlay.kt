@@ -1,6 +1,8 @@
 package ai.havencore.companion.voice
 
 import ai.havencore.companion.audio.TtsPlayer
+import ai.havencore.companion.ui.components.HeroDisc
+import ai.havencore.companion.ui.theme.HavenTokens
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateContentSize
@@ -46,7 +48,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
@@ -74,7 +75,7 @@ fun AssistOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.4f))
+            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f))
             .pointerInput(Unit) {
                 detectTapGestures(onTap = { onDismiss() })
             },
@@ -83,27 +84,32 @@ fun AssistOverlay(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
+                // Sheet-specific minimum so the body doesn't collapse during
+                // brief phase transitions.
                 .heightIn(min = 240.dp, max = maxSheetHeight)
-                .animateContentSize(animationSpec = tween(durationMillis = 220))
+                .animateContentSize(animationSpec = tween(HavenTokens.Motion.Slow))
                 .pointerInput(Unit) {
                     // Consume taps on the sheet so they do not propagate to
                     // the scrim's dismiss handler.
                     detectTapGestures(onTap = {})
                 },
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-            tonalElevation = 4.dp,
+            shape = HavenTokens.Radius.sheetTop,
+            tonalElevation = HavenTokens.Elevation.Level2,
             color = MaterialTheme.colorScheme.surface,
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                    .padding(
+                        horizontal = HavenTokens.Spacing.xl,
+                        vertical = HavenTokens.Spacing.md,
+                    ),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 DragHandle()
-                Spacer(modifier = Modifier.size(8.dp))
+                Spacer(modifier = Modifier.size(HavenTokens.Spacing.sm))
                 HeaderRow(state.phase)
-                Spacer(modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.size(HavenTokens.Spacing.xl))
                 PhaseBody(
                     state = state,
                     amplitudeFlow = amplitudeFlow,
@@ -112,7 +118,7 @@ fun AssistOverlay(
                     onStopMic = onStopMic,
                     onDismiss = onDismiss,
                 )
-                Spacer(modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.size(HavenTokens.Spacing.xl))
             }
         }
     }
@@ -120,9 +126,11 @@ fun AssistOverlay(
 
 @Composable
 private fun DragHandle() {
+    // Drag handle dimensions are pixel-precise visual constants; standard
+    // Material 3 sheet handle is 32×4 with a 2.dp corner.
     Box(
         modifier = Modifier
-            .padding(top = 4.dp)
+            .padding(top = HavenTokens.Spacing.xs)
             .size(width = 36.dp, height = 4.dp)
             .clip(RoundedCornerShape(2.dp))
             .background(MaterialTheme.colorScheme.outlineVariant),
@@ -158,13 +166,16 @@ private fun StatusPill(phase: Phase) {
         Phase.Error -> Triple("Error", MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.onErrorContainer)
     }
     Surface(
-        shape = RoundedCornerShape(50),
+        shape = HavenTokens.Radius.pill,
         color = container,
         contentColor = content,
     ) {
         Text(
             text = label,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+            modifier = Modifier.padding(
+                horizontal = HavenTokens.Spacing.md,
+                vertical = HavenTokens.Spacing.xs,
+            ),
             style = MaterialTheme.typography.labelMedium,
         )
     }
@@ -182,8 +193,9 @@ private fun PhaseBody(
     AnimatedContent(
         targetState = state.phase,
         transitionSpec = {
-            (fadeIn(tween(200)) + slideInVertically(tween(200)) { it / 6 }) togetherWith
-                fadeOut(tween(150)) using SizeTransform(clip = false)
+            (fadeIn(tween(HavenTokens.Motion.Standard)) +
+                slideInVertically(tween(HavenTokens.Motion.Standard)) { it / 6 }) togetherWith
+                fadeOut(tween(HavenTokens.Motion.Fast)) using SizeTransform(clip = false)
         },
         contentKey = { it::class },
         label = "phase-body",
@@ -191,7 +203,7 @@ private fun PhaseBody(
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.lg),
         ) {
             when (phase) {
                 Phase.Connecting -> ConnectingRing()
@@ -199,7 +211,7 @@ private fun PhaseBody(
                 Phase.Listening -> {
                     MicLevelHero(amplitudeFlow)
                     MicLevelEqualizer(amplitudeFlow)
-                    Spacer(modifier = Modifier.size(4.dp))
+                    Spacer(modifier = Modifier.size(HavenTokens.Spacing.xs))
                     StopButton(onStopMic)
                 }
 
@@ -234,7 +246,7 @@ private fun PhaseBody(
                 }
 
                 Phase.NoSpeech -> {
-                    StaticHeroIcon(
+                    HeroDisc(
                         icon = Icons.Filled.MicOff,
                         discColor = MaterialTheme.colorScheme.surfaceVariant,
                         iconColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -248,7 +260,7 @@ private fun PhaseBody(
                 }
 
                 Phase.PermissionMissing -> {
-                    StaticHeroIcon(
+                    HeroDisc(
                         icon = Icons.Filled.Mic,
                         discColor = MaterialTheme.colorScheme.errorContainer,
                         iconColor = MaterialTheme.colorScheme.onErrorContainer,
@@ -262,7 +274,7 @@ private fun PhaseBody(
                 }
 
                 Phase.Error -> {
-                    StaticHeroIcon(
+                    HeroDisc(
                         icon = Icons.Filled.ErrorOutline,
                         discColor = MaterialTheme.colorScheme.errorContainer,
                         iconColor = MaterialTheme.colorScheme.onErrorContainer,
@@ -309,12 +321,15 @@ private fun TranscriptBubble(text: String) {
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             ),
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.large,
             modifier = Modifier.fillMaxWidth(0.75f),
         ) {
             Text(
                 text = text,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                modifier = Modifier.padding(
+                    horizontal = HavenTokens.Spacing.md,
+                    vertical = HavenTokens.Spacing.sm,
+                ),
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
@@ -325,13 +340,16 @@ private fun TranscriptBubble(text: String) {
 private fun ReplyBubble(text: String) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
     ) {
         Text(
             text = text,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            modifier = Modifier.padding(
+                horizontal = HavenTokens.Spacing.lg,
+                vertical = HavenTokens.Spacing.md,
+            ),
             style = MaterialTheme.typography.bodyLarge,
         )
     }

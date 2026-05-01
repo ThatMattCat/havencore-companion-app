@@ -1,6 +1,7 @@
 package ai.havencore.companion.ui.chat.components
 
 import ai.havencore.companion.ui.chat.TurnEvent
+import ai.havencore.companion.ui.theme.HavenTokens
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,10 +50,10 @@ fun ToolCallCard(pair: TurnEvent.ToolPair, modifier: Modifier = Modifier) {
             .fillMaxWidth()
             .clickable { expanded = !expanded },
     ) {
-        Column(modifier = Modifier.padding(8.dp)) {
+        Column(modifier = Modifier.padding(HavenTokens.Spacing.sm)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.sm),
             ) {
                 Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
                 Text(
@@ -69,11 +70,11 @@ fun ToolCallCard(pair: TurnEvent.ToolPair, modifier: Modifier = Modifier) {
                 )
             }
             if (expanded) {
-                Spacer(Modifier.size(8.dp))
+                Spacer(Modifier.size(HavenTokens.Spacing.sm))
                 Text("args", style = MaterialTheme.typography.labelMedium)
                 MonoBlock(prettyJson(pair.args))
                 pair.result?.let { res ->
-                    Spacer(Modifier.size(8.dp))
+                    Spacer(Modifier.size(HavenTokens.Spacing.sm))
                     Text("result", style = MaterialTheme.typography.labelMedium)
                     val display = if (res.length > RESULT_DISPLAY_CAP) {
                         res.take(RESULT_DISPLAY_CAP) + "\n…(truncated)"

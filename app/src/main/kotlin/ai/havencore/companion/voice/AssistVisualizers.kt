@@ -1,6 +1,7 @@
 package ai.havencore.companion.voice
 
 import ai.havencore.companion.audio.MicRecorder
+import ai.havencore.companion.ui.theme.HavenTokens
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -33,14 +34,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 
-internal val HeroSize: Dp = 120.dp
+// Visualizer-specific dp and ms literals (bar widths, eq heights, mic-pulse
+// 120 ms, eq tween 180 ms, infinite periods 460–740 ms) are intentional
+// visual constants for these primitives. Layout spacing and hero sizes
+// still flow through HavenTokens. See docs/design-system.md.
 
 private const val AMPLITUDE_HEADROOM = 6800f
 
@@ -52,7 +53,7 @@ private fun normalizeAmplitude(amp: Int): Float {
 @Composable
 internal fun ConnectingRing() {
     Box(
-        modifier = Modifier.size(HeroSize),
+        modifier = Modifier.size(HavenTokens.Hero.Disc),
         contentAlignment = Alignment.Center,
     ) {
         CircularProgressIndicator(
@@ -86,19 +87,19 @@ internal fun MicLevelHero(amplitudeFlow: StateFlow<Int>) {
     )
 
     Box(
-        modifier = Modifier.size(HeroSize),
+        modifier = Modifier.size(HavenTokens.Hero.Disc),
         contentAlignment = Alignment.Center,
     ) {
         Box(
             modifier = Modifier
-                .size(HeroSize)
+                .size(HavenTokens.Hero.Disc)
                 .scale(scale)
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.primary.copy(alpha = haloAlpha)),
         )
         Box(
             modifier = Modifier
-                .size(76.dp)
+                .size(HavenTokens.Hero.InnerDisc)
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.primaryContainer),
             contentAlignment = Alignment.Center,
@@ -106,7 +107,7 @@ internal fun MicLevelHero(amplitudeFlow: StateFlow<Int>) {
             Icon(
                 imageVector = Icons.Filled.Mic,
                 contentDescription = null,
-                modifier = Modifier.size(36.dp),
+                modifier = Modifier.size(HavenTokens.Hero.Icon),
                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
             )
         }
@@ -160,12 +161,12 @@ internal fun MicLevelEqualizer(amplitudeFlow: StateFlow<Int>) {
 internal fun ThinkingDots() {
     val transition = rememberInfiniteTransition(label = "thinking-dots")
     Box(
-        modifier = Modifier.size(HeroSize),
+        modifier = Modifier.size(HavenTokens.Hero.Disc),
         contentAlignment = Alignment.Center,
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.md),
         ) {
             repeat(3) { index ->
                 val scale by transition.animateFloat(
@@ -203,12 +204,12 @@ internal fun SpeakingBars(active: Boolean) {
     val periods = listOf(520, 680, 460, 740, 580)
     val phases = listOf(0, 180, 90, 250, 60)
     Box(
-        modifier = Modifier.size(HeroSize),
+        modifier = Modifier.size(HavenTokens.Hero.Disc),
         contentAlignment = Alignment.Center,
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.sm),
             modifier = Modifier.height(72.dp),
         ) {
             periods.forEachIndexed { i, period ->
@@ -242,33 +243,3 @@ internal fun SpeakingBars(active: Boolean) {
     }
 }
 
-/**
- * Non-animated icon-on-disc hero used for terminal phases (NoSpeech,
- * PermissionMissing, Error).
- */
-@Composable
-internal fun StaticHeroIcon(
-    icon: ImageVector,
-    discColor: Color,
-    iconColor: Color,
-) {
-    Box(
-        modifier = Modifier.size(HeroSize),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(76.dp)
-                .clip(CircleShape)
-                .background(discColor),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(36.dp),
-                tint = iconColor,
-            )
-        }
-    }
-}

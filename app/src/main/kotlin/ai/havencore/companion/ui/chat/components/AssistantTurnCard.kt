@@ -2,6 +2,7 @@ package ai.havencore.companion.ui.chat.components
 
 import ai.havencore.companion.ui.chat.TurnEvent
 import ai.havencore.companion.ui.chat.TurnItem
+import ai.havencore.companion.ui.theme.HavenTokens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,7 +27,7 @@ import androidx.compose.ui.unit.dp
 fun AssistantTurnCard(turn: TurnItem.AssistantTurn, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.sm),
     ) {
         if (turn.finalText == null && turn.errorText == null) {
             ThinkingRow(turn.thinkingIteration)
@@ -51,7 +52,7 @@ fun AssistantTurnCard(turn: TurnItem.AssistantTurn, modifier: Modifier = Modifie
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Row(
-                    modifier = Modifier.padding(8.dp),
+                    modifier = Modifier.padding(HavenTokens.Spacing.sm),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
@@ -59,7 +60,7 @@ fun AssistantTurnCard(turn: TurnItem.AssistantTurn, modifier: Modifier = Modifie
                         contentDescription = null,
                         modifier = Modifier.size(20.dp),
                     )
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(HavenTokens.Spacing.sm))
                     Text(msg, style = MaterialTheme.typography.bodyMedium)
                 }
             }
@@ -77,7 +78,7 @@ private fun ThinkingRow(iteration: Int?) {
     }
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.sm),
     ) {
         CircularProgressIndicator(
             modifier = Modifier.size(20.dp),

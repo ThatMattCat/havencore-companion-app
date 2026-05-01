@@ -6,6 +6,7 @@ import ai.havencore.companion.ui.chat.components.ConnectionBanner
 import ai.havencore.companion.ui.chat.components.MicButton
 import ai.havencore.companion.ui.chat.components.SummaryResetDivider
 import ai.havencore.companion.ui.chat.components.UserBubble
+import ai.havencore.companion.ui.theme.HavenTokens
 import ai.havencore.companion.voice.DefaultAssistantHelper
 import android.Manifest
 import android.content.pm.PackageManager
@@ -200,8 +201,11 @@ fun ChatScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(
+                    horizontal = HavenTokens.Spacing.md,
+                    vertical = HavenTokens.Spacing.md,
+                ),
+                verticalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.sm),
             ) {
                 items(state.turns, key = { it.key }) { turn ->
                     when (turn) {
@@ -228,15 +232,18 @@ private fun ChatInputBar(
     onSend: () -> Unit,
     onMicTap: () -> Unit,
 ) {
-    Surface(tonalElevation = 4.dp, modifier = Modifier.fillMaxWidth()) {
+    Surface(
+        tonalElevation = HavenTokens.Elevation.Level2,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
                 .imePadding()
-                .padding(horizontal = 8.dp, vertical = 6.dp),
+                .padding(horizontal = HavenTokens.Spacing.sm, vertical = HavenTokens.Spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.xs),
         ) {
             MicButton(
                 voice = voice,

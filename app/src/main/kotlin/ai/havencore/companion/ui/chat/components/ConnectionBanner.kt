@@ -1,6 +1,7 @@
 package ai.havencore.companion.ui.chat.components
 
 import ai.havencore.companion.ui.chat.ConnectionUi
+import ai.havencore.companion.ui.theme.HavenTokens
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -41,14 +42,17 @@ fun ConnectionBanner(
         val showRetry = onRetry != null && state is ConnectionUi.Failed
 
         Surface(
-            tonalElevation = 2.dp,
+            tonalElevation = HavenTokens.Elevation.Level1,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    .padding(
+                        horizontal = HavenTokens.Spacing.md,
+                        vertical = HavenTokens.Spacing.xs,
+                    ),
+                horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.sm),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (showSpinner) {

@@ -1,5 +1,6 @@
 package ai.havencore.companion.ui.chat.components
 
+import ai.havencore.companion.ui.theme.HavenTokens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,7 +28,7 @@ fun UserBubble(text: String, modifier: Modifier = Modifier) {
         ) {
             Text(
                 text = text,
-                modifier = Modifier.padding(12.dp),
+                modifier = Modifier.padding(HavenTokens.Spacing.md),
                 style = MaterialTheme.typography.bodyMedium,
             )
         }

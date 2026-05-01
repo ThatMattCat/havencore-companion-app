@@ -1,6 +1,7 @@
 package ai.havencore.companion.ui.chat.components
 
 import ai.havencore.companion.net.ChatEvent
+import ai.havencore.companion.ui.theme.HavenTokens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -25,7 +26,7 @@ fun MetricChips(metric: ChatEvent.Metric, modifier: Modifier = Modifier) {
     val toggle = { expanded = !expanded }
 
     Column(modifier = modifier) {
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.xs)) {
             AssistChip(
                 onClick = toggle,
                 label = { Text("${metric.total_ms} ms total") },
@@ -49,7 +50,7 @@ fun MetricChips(metric: ChatEvent.Metric, modifier: Modifier = Modifier) {
             }
         }
         if (expanded && metric.tool_calls.isNotEmpty()) {
-            Column(modifier = Modifier.padding(top = 4.dp)) {
+            Column(modifier = Modifier.padding(top = HavenTokens.Spacing.xs)) {
                 metric.tool_calls.forEach { tc ->
                     Text(
                         "• ${tc.name}: ${tc.ms} ms",

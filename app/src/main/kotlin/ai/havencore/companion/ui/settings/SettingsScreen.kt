@@ -3,6 +3,7 @@ package ai.havencore.companion.ui.settings
 import ai.havencore.companion.R
 import ai.havencore.companion.data.SettingsRepository
 import ai.havencore.companion.push.PushUi
+import ai.havencore.companion.ui.theme.HavenTokens
 import ai.havencore.companion.voice.DefaultAssistantHelper
 import android.Manifest
 import android.content.Intent
@@ -97,10 +98,10 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
         Column(
             modifier = Modifier
                 .padding(padding)
-                .padding(16.dp)
+                .padding(HavenTokens.Spacing.lg)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.md),
         ) {
             DefaultAssistantBanner(
                 held = isAssistantHeld,
@@ -139,7 +140,7 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
             )
 
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.sm),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Button(onClick = { vm.save(baseUrl, deviceName) }) {
@@ -161,7 +162,7 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 PingState.InFlight -> Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.sm),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     CircularProgressIndicator(modifier = Modifier.size(20.dp))
@@ -195,8 +196,8 @@ private fun VoiceCard(
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(HavenTokens.Spacing.lg),
+            verticalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.sm),
         ) {
             Text(
                 text = "Voice",
@@ -244,8 +245,8 @@ private fun NotificationsCard(
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(HavenTokens.Spacing.lg),
+            verticalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.sm),
         ) {
             Text(
                 text = stringResource(R.string.push_card_title),
@@ -258,7 +259,7 @@ private fun NotificationsCard(
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.md),
             ) {
                 Switch(
                     checked = checked,
@@ -288,7 +289,7 @@ private fun NotificationsCard(
                 )
                 PushUi.NoDistributor -> Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.sm),
                 ) {
                     Text(
                         text = "Status: no distributor app installed",
@@ -308,7 +309,7 @@ private fun NotificationsCard(
                 }
                 is PushUi.AwaitingEndpoint -> Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.sm),
                 ) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp))
                     Text(
@@ -323,7 +324,7 @@ private fun NotificationsCard(
                 )
                 is PushUi.Failed -> Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.sm),
                 ) {
                     Text(
                         text = "Status: registration failed — ${state.reason}",
@@ -347,7 +348,7 @@ private fun NotificationsCard(
                 )
             }
             if (helpExpanded) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.xs)) {
                     Text(
                         text = stringResource(R.string.push_setup_help_step_1),
                         style = MaterialTheme.typography.bodySmall,
@@ -405,9 +406,9 @@ private fun DefaultAssistantBanner(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = HavenTokens.Spacing.lg, vertical = HavenTokens.Spacing.md),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.md),
         ) {
             Icon(
                 imageVector = if (held) Icons.Filled.CheckCircle else Icons.Filled.Warning,
@@ -415,7 +416,7 @@ private fun DefaultAssistantBanner(
             )
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+                verticalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.xs),
             ) {
                 Text(
                     text = if (held) {
