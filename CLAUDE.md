@@ -172,6 +172,44 @@ Tighten when remote access becomes real.
   phase → visualizer mapping, auto-endpointing silence watcher, and the
   Samsung-specific gotchas (`RecognitionService` stub, role-request
   intent fallback to `Settings.ACTION_VOICE_INPUT_SETTINGS`).
+- `docs/design-system.md` — color / typography / shape / spacing /
+  motion / elevation tokens, component patterns, vibe-shift recipes,
+  and the pre-merge UI checklist. Read before any UI change.
+
+## Design system
+
+`docs/design-system.md` is the source of truth for the look and feel.
+The voice assist overlay (`voice/AssistOverlay.kt` +
+`voice/AssistVisualizers.kt`) is the visual reference; every other
+surface should feel like its sibling.
+
+Hard rules for new UI:
+
+- Spacing, radius, motion, elevation, hero sizes come from
+  `HavenTokens` (`ui/theme/Tokens.kt`). Color comes from
+  `MaterialTheme.colorScheme`. Shape comes from `MaterialTheme.shapes`.
+  Type comes from `MaterialTheme.typography`. Hardcoded `dp` literals
+  only inside `ui/theme/` or as one-off pixel-precise visual constants
+  with a justifying comment. No `Color(0x...)` literal outside
+  `ui/theme/Color.kt`.
+- Before adding a new card / banner / pill / state surface, check
+  `ui/components/` first — most patterns are already named. The
+  canonical recipes (`StatusPill`, `AnimatedSwap`, `HeroDisc`,
+  `EmptyState` / `LoadingState` / `ErrorState`, `Banner`,
+  `BottomSheetSurface`) are listed in the design doc.
+- Walk the pre-merge UI checklist at the bottom of
+  `docs/design-system.md` before committing UI changes.
+
+The token migration is staged. The foundation is in place:
+`ui/theme/Tokens.kt`, `ui/theme/Shapes.kt`, the full
+`HavenLightColors` / `HavenDarkColors` schemes in `Color.kt`, and the
+wired `HavenCoreTheme` (color + shapes + typography). What's left is
+migrating screens one at a time (Settings → History → Chat →
+AssistOverlay) to consume these instead of literal `dp` / `Color(0x...)`
+/ `RoundedCornerShape(N.dp)`. While migration is in flight, prefer
+reading from `MaterialTheme` and `HavenTokens` over duplicating
+literals — even in screens that haven't been migrated yet, new code
+should follow the rules.
 
 ## Voice-friendly content
 
@@ -189,6 +227,10 @@ unicode.
 - **No emojis in code or docs** unless explicitly requested.
 - **License**: LGPL-2.1, mirroring havencore. Don't change without
   asking.
+- **UI work**: read `docs/design-system.md` first — it covers tokens,
+  component patterns, color roles, the pre-merge checklist, and the
+  vibe-shift hooks. Adding a new screen, card, banner, pill, or state
+  surface? Start there.
 
 ## Workflow gotchas
 
