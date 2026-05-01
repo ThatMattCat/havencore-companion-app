@@ -1,13 +1,17 @@
 package ai.havencore.companion
 
+import ai.havencore.companion.data.ThemeMode
 import ai.havencore.companion.push.PushNotifier
 import ai.havencore.companion.ui.nav.HavenNav
 import ai.havencore.companion.ui.theme.HavenCoreTheme
+import ai.havencore.companion.ui.theme.resolveDarkTheme
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import kotlinx.coroutines.flow.MutableStateFlow
 
 class MainActivity : ComponentActivity() {
@@ -20,7 +24,14 @@ class MainActivity : ComponentActivity() {
         consumeSessionExtra(intent)
         val app = application as HavenCoreApp
         setContent {
-            HavenCoreTheme {
+            val dynamicColor by app.container.settings.dynamicColorFlow
+                .collectAsState(initial = false)
+            val themeMode by app.container.settings.themeModeFlow
+                .collectAsState(initial = ThemeMode.System)
+            HavenCoreTheme(
+                darkTheme = resolveDarkTheme(themeMode),
+                dynamicColor = dynamicColor,
+            ) {
                 HavenNav(
                     container = app.container,
                     pendingSessionId = pendingSessionId,

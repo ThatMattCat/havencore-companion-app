@@ -82,7 +82,8 @@ app/src/main/kotlin/ai/havencore/companion/
 ├── MainActivity.kt              # single-activity Compose host; onNewIntent feeds EXTRA_SESSION_ID into pendingSessionId StateFlow for push deep-links
 ├── data/
 │   ├── ServerConfig.kt
-│   └── SettingsRepository.kt    # DataStore<Preferences>: baseUrl, deviceName, lastSessionId, autoSpeak, default_assistant_prompt_seen, push_*, silence_timeout_ms
+│   ├── ThemeMode.kt             # System / Light / Dark enum (DataStore-persisted)
+│   └── SettingsRepository.kt    # DataStore<Preferences>: baseUrl, deviceName, lastSessionId, autoSpeak, default_assistant_prompt_seen, push_*, silence_timeout_ms, dynamic_color, theme_mode
 ├── audio/
 │   ├── MicRecorder.kt           # AAC-in-MP4 capture with peak-amplitude polling for hasSpeech() gate; exposes currentAmplitude for live endpointing
 │   └── TtsPlayer.kt             # Media3 ExoPlayer wrapper for TTS playback
@@ -118,11 +119,18 @@ app/src/main/kotlin/ai/havencore/companion/
     ├── history/{HistoryScreen.kt, HistoryViewModel.kt}
     ├── chat/
     │   ├── ChatScreen.kt
-    │   ├── ChatViewModel.kt
+    │   ├── ChatViewModel.kt    # exposes micAmplitude flow for input-bar halo
     │   ├── ChatUiState.kt
     │   ├── ResumeMapper.kt      # OpenAI messages -> Turn list
-    │   └── components/{UserBubble, AssistantTurnCard, ToolCallCard, ReasoningCard, MetricChips, SummaryResetDivider, ConnectionBanner, AutoSpeakToggle, MicButton}.kt
-    └── theme/{Color.kt, Theme.kt, Type.kt}
+    │   └── components/{UserBubble, AssistantTurnCard, ToolCallCard (ToolCallRow), ReasoningCard (ReasoningRow), MetricChips, SummaryResetDivider, AutoSpeakToggle, MicButton}.kt
+    ├── components/             # canonical recipes — see docs/design-system.md
+    │   ├── HeroDisc.kt          # 120 dp hero + AccentDisc (32 dp inline leading icon)
+    │   ├── StatusPill.kt
+    │   ├── Banner.kt            # severity-driven inline status row
+    │   ├── States.kt            # EmptyState / LoadingState / ErrorState
+    │   ├── AnimatedSwap.kt      # phase-swap recipe (fade + rise + size)
+    │   └── BottomSheetSurface.kt
+    └── theme/{Color.kt, Theme.kt, Type.kt, Tokens.kt, Shapes.kt}  # Quiet Tech identity; see docs/design-system.md
 ```
 
 ## Backend the app talks to

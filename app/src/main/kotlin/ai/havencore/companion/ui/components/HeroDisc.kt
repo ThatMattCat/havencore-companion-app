@@ -12,6 +12,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 
 /**
  * Static icon-on-disc hero. Sized to `HavenTokens.Hero.Disc` so
@@ -48,5 +50,36 @@ fun HeroDisc(
                 tint = iconColor,
             )
         }
+    }
+}
+
+/**
+ * Inline-sized variant of `HeroDisc` for leading positions in cards
+ * and list rows — same circle-with-icon pattern, just smaller and
+ * without the outer halo box. Default size matches a comfortable
+ * card-leading visual weight (32 dp disc, 18 dp icon).
+ */
+@Composable
+fun AccentDisc(
+    icon: ImageVector,
+    discColor: Color,
+    iconColor: Color,
+    contentDescription: String? = null,
+    size: Dp = 32.dp,
+    iconSize: Dp = 18.dp,
+) {
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(discColor),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(iconSize),
+            tint = iconColor,
+        )
     }
 }

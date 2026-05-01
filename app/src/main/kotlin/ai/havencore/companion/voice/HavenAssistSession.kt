@@ -8,7 +8,9 @@ import ai.havencore.companion.data.ServerConfig
 import ai.havencore.companion.net.ChatEvent
 import ai.havencore.companion.net.ChatWsSession
 import ai.havencore.companion.net.ParsedFrame
+import ai.havencore.companion.data.ThemeMode
 import ai.havencore.companion.ui.theme.HavenCoreTheme
+import ai.havencore.companion.ui.theme.resolveDarkTheme
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -20,6 +22,8 @@ import android.service.voice.VoiceInteractionSession
 import android.util.Log
 import android.view.View
 import android.view.WindowManager
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.content.ContextCompat
@@ -98,7 +102,14 @@ class HavenAssistSession(context: Context) : VoiceInteractionSession(context) {
                 ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed,
             )
             setContent {
-                HavenCoreTheme {
+                val dynamicColor by app.settings.dynamicColorFlow
+                    .collectAsState(initial = false)
+                val themeMode by app.settings.themeModeFlow
+                    .collectAsState(initial = ThemeMode.System)
+                HavenCoreTheme(
+                    darkTheme = resolveDarkTheme(themeMode),
+                    dynamicColor = dynamicColor,
+                ) {
                     AssistOverlay(
                         stateFlow = state,
                         amplitudeFlow = app.mic.currentAmplitude,

@@ -1,11 +1,12 @@
 package ai.havencore.companion.voice
 
 import ai.havencore.companion.audio.TtsPlayer
+import ai.havencore.companion.ui.components.BottomSheetSurface
 import ai.havencore.companion.ui.components.HeroDisc
+import ai.havencore.companion.ui.components.StatusPill
 import ai.havencore.companion.ui.theme.HavenTokens
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -20,11 +21,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Mic
@@ -47,18 +46,18 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Bottom-sheet assist overlay. The outer Box paints a 40 % black scrim
- * across the whole window (the session Window is sized MATCH_PARENT) and
- * dismisses on any tap. The inner Surface is anchored at the bottom,
- * grows / shrinks with content (capped at 72 % of screen height), and
- * eats taps so sheet content does not bubble up to the scrim.
+ * Bottom-sheet assist overlay. The outer Box paints the M3 scrim
+ * across the whole window (the session Window is sized MATCH_PARENT)
+ * and dismisses on any tap. The inner [BottomSheetSurface] is anchored
+ * at the bottom, grows / shrinks with content (capped at 72 % of
+ * screen height), and eats taps so sheet content does not bubble up
+ * to the scrim.
  */
 @Composable
 fun AssistOverlay(
@@ -80,61 +79,30 @@ fun AssistOverlay(
                 detectTapGestures(onTap = { onDismiss() })
             },
     ) {
-        Surface(
+        BottomSheetSurface(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                // Sheet-specific minimum so the body doesn't collapse during
-                // brief phase transitions.
-                .heightIn(min = 240.dp, max = maxSheetHeight)
-                .animateContentSize(animationSpec = tween(HavenTokens.Motion.Slow))
                 .pointerInput(Unit) {
-                    // Consume taps on the sheet so they do not propagate to
+                    // Eat taps on the sheet so they do not bubble up to
                     // the scrim's dismiss handler.
                     detectTapGestures(onTap = {})
                 },
-            shape = HavenTokens.Radius.sheetTop,
-            tonalElevation = HavenTokens.Elevation.Level2,
-            color = MaterialTheme.colorScheme.surface,
+            maxHeight = maxSheetHeight,
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(
-                        horizontal = HavenTokens.Spacing.xl,
-                        vertical = HavenTokens.Spacing.md,
-                    ),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                DragHandle()
-                Spacer(modifier = Modifier.size(HavenTokens.Spacing.sm))
-                HeaderRow(state.phase)
-                Spacer(modifier = Modifier.size(HavenTokens.Spacing.xl))
-                PhaseBody(
-                    state = state,
-                    amplitudeFlow = amplitudeFlow,
-                    ttsStateFlow = ttsStateFlow,
-                    onOpenApp = onOpenApp,
-                    onStopMic = onStopMic,
-                    onDismiss = onDismiss,
-                )
-                Spacer(modifier = Modifier.size(HavenTokens.Spacing.xl))
-            }
+            Spacer(modifier = Modifier.size(HavenTokens.Spacing.sm))
+            HeaderRow(state.phase)
+            Spacer(modifier = Modifier.size(HavenTokens.Spacing.xl))
+            PhaseBody(
+                state = state,
+                amplitudeFlow = amplitudeFlow,
+                ttsStateFlow = ttsStateFlow,
+                onOpenApp = onOpenApp,
+                onStopMic = onStopMic,
+                onDismiss = onDismiss,
+            )
+            Spacer(modifier = Modifier.size(HavenTokens.Spacing.xl))
         }
     }
-}
-
-@Composable
-private fun DragHandle() {
-    // Drag handle dimensions are pixel-precise visual constants; standard
-    // Material 3 sheet handle is 32×4 with a 2.dp corner.
-    Box(
-        modifier = Modifier
-            .padding(top = HavenTokens.Spacing.xs)
-            .size(width = 36.dp, height = 4.dp)
-            .clip(RoundedCornerShape(2.dp))
-            .background(MaterialTheme.colorScheme.outlineVariant),
-    )
 }
 
 @Composable
@@ -149,36 +117,55 @@ private fun HeaderRow(phase: Phase) {
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface,
         )
-        StatusPill(phase)
+        PhaseStatusPill(phase)
     }
 }
 
 @Composable
-private fun StatusPill(phase: Phase) {
+private fun PhaseStatusPill(phase: Phase) {
     val (label, container, content) = when (phase) {
-        Phase.Connecting -> Triple("Connecting", MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer)
-        Phase.Listening -> Triple("Listening", MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer)
-        Phase.Transcribing -> Triple("Hearing you", MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer)
-        Phase.Thinking -> Triple("Thinking", MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer)
-        Phase.Replying -> Triple("Speaking", MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer)
-        Phase.NoSpeech -> Triple("No speech", MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant)
-        Phase.PermissionMissing -> Triple("Permission needed", MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.onErrorContainer)
-        Phase.Error -> Triple("Error", MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.onErrorContainer)
-    }
-    Surface(
-        shape = HavenTokens.Radius.pill,
-        color = container,
-        contentColor = content,
-    ) {
-        Text(
-            text = label,
-            modifier = Modifier.padding(
-                horizontal = HavenTokens.Spacing.md,
-                vertical = HavenTokens.Spacing.xs,
-            ),
-            style = MaterialTheme.typography.labelMedium,
+        Phase.Connecting -> Triple(
+            "Connecting",
+            MaterialTheme.colorScheme.secondaryContainer,
+            MaterialTheme.colorScheme.onSecondaryContainer,
+        )
+        Phase.Listening -> Triple(
+            "Listening",
+            MaterialTheme.colorScheme.primaryContainer,
+            MaterialTheme.colorScheme.onPrimaryContainer,
+        )
+        Phase.Transcribing -> Triple(
+            "Hearing you",
+            MaterialTheme.colorScheme.secondaryContainer,
+            MaterialTheme.colorScheme.onSecondaryContainer,
+        )
+        Phase.Thinking -> Triple(
+            "Thinking",
+            MaterialTheme.colorScheme.secondaryContainer,
+            MaterialTheme.colorScheme.onSecondaryContainer,
+        )
+        Phase.Replying -> Triple(
+            "Speaking",
+            MaterialTheme.colorScheme.tertiaryContainer,
+            MaterialTheme.colorScheme.onTertiaryContainer,
+        )
+        Phase.NoSpeech -> Triple(
+            "No speech",
+            MaterialTheme.colorScheme.surfaceVariant,
+            MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Phase.PermissionMissing -> Triple(
+            "Permission needed",
+            MaterialTheme.colorScheme.errorContainer,
+            MaterialTheme.colorScheme.onErrorContainer,
+        )
+        Phase.Error -> Triple(
+            "Error",
+            MaterialTheme.colorScheme.errorContainer,
+            MaterialTheme.colorScheme.onErrorContainer,
         )
     }
+    StatusPill(label = label, container = container, content = content)
 }
 
 @Composable
@@ -354,4 +341,3 @@ private fun ReplyBubble(text: String) {
         )
     }
 }
-

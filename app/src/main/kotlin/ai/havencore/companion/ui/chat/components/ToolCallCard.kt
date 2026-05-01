@@ -21,7 +21,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -38,51 +38,73 @@ import kotlinx.serialization.json.JsonObject
 
 private const val RESULT_DISPLAY_CAP = 7990
 
+/**
+ * Inline expandable row for a tool call inside an assistant turn.
+ * Visually flat — no nested card — so the parent assistant card owns
+ * the visual frame. Tap toggles args/result detail.
+ */
 @Composable
-fun ToolCallCard(pair: TurnEvent.ToolPair, modifier: Modifier = Modifier) {
+fun ToolCallRow(pair: TurnEvent.ToolPair, modifier: Modifier = Modifier) {
     var expanded by rememberSaveable(pair.id) { mutableStateOf(false) }
 
     val verb = if (pair.result == null) "Calling" else "Result from"
     val icon = if (pair.result == null) Icons.Default.Build else Icons.Default.CheckCircle
 
-    OutlinedCard(
+    Column(
         modifier = modifier
             .fillMaxWidth()
             .clickable { expanded = !expanded },
     ) {
-        Column(modifier = Modifier.padding(HavenTokens.Spacing.sm)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.sm),
-            ) {
-                Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.sm),
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = "$verb ${pair.tool}",
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            pair.ms?.let {
                 Text(
-                    "$verb ${pair.tool}",
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                pair.ms?.let {
-                    Text("$it ms", style = MaterialTheme.typography.labelSmall)
-                }
-                Icon(
-                    if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = null,
+                    text = "$it ms",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            if (expanded) {
+            Icon(
+                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (expanded) {
+            Spacer(Modifier.size(HavenTokens.Spacing.sm))
+            Text(
+                text = "args",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            MonoBlock(prettyJson(pair.args))
+            pair.result?.let { res ->
                 Spacer(Modifier.size(HavenTokens.Spacing.sm))
-                Text("args", style = MaterialTheme.typography.labelMedium)
-                MonoBlock(prettyJson(pair.args))
-                pair.result?.let { res ->
-                    Spacer(Modifier.size(HavenTokens.Spacing.sm))
-                    Text("result", style = MaterialTheme.typography.labelMedium)
-                    val display = if (res.length > RESULT_DISPLAY_CAP) {
-                        res.take(RESULT_DISPLAY_CAP) + "\n…(truncated)"
-                    } else {
-                        res
-                    }
-                    MonoBlock(display)
+                Text(
+                    text = "result",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                val display = if (res.length > RESULT_DISPLAY_CAP) {
+                    res.take(RESULT_DISPLAY_CAP) + "\n…(truncated)"
+                } else {
+                    res
                 }
+                MonoBlock(display)
             }
         }
     }
@@ -90,17 +112,27 @@ fun ToolCallCard(pair: TurnEvent.ToolPair, modifier: Modifier = Modifier) {
 
 @Composable
 private fun MonoBlock(text: String) {
-    Box(
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = MaterialTheme.shapes.small,
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = 200.dp)
-            .verticalScroll(rememberScrollState()),
+            .padding(top = HavenTokens.Spacing.xs),
     ) {
-        Text(
-            text = text,
-            fontFamily = FontFamily.Monospace,
-            style = MaterialTheme.typography.bodySmall,
-        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 200.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(HavenTokens.Spacing.sm),
+        ) {
+            Text(
+                text = text,
+                fontFamily = FontFamily.Monospace,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
     }
 }
 

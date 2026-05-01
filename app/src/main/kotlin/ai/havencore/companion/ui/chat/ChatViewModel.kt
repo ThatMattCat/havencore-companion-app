@@ -36,6 +36,8 @@ class ChatViewModel(
     private val _state = MutableStateFlow(ChatUiState())
     val state: StateFlow<ChatUiState> = _state.asStateFlow()
 
+    val micAmplitude: StateFlow<Int> = mic.currentAmplitude
+
     private var keyCounter: Long = 0L
     private fun nextKey(): Long = ++keyCounter
 

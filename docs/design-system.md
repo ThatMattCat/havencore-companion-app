@@ -30,6 +30,79 @@ surface or changing the look of an existing one.
   `220 ms` content-size animation. Inconsistency with the overlay is
   the bug.
 
+## Visual identity — Quiet Tech
+
+The companion app's identity is **Quiet Tech**: a self-hosted tool you
+own, not a cloud product you rent. Slate canvas, cool blue primary,
+warm amber as the rare accent. Dark-first. Confident, technical-but-
+warm, never showy.
+
+### Palette
+
+Seeded from `#2D5BA1` (cool blue). The dark scheme is the canonical
+look — anchored to a deep slate background (`#0F1622`) so cards lift
+without needing a stroke. Light scheme is a clean inverse for users
+who prefer it.
+
+| Role | Dark | Light | Use |
+|---|---|---|---|
+| `background` | `#0F1622` | `#FBFCFE` | App canvas |
+| `surface` | `#1A2332` | `#FFFFFF` | Cards |
+| `primary` | `#ADCBF8` | `#2D5BA1` | Send button, FAB, mic-active |
+| `primaryContainer` | `#194878` | `#D5E3FF` | User bubble, Listening pill |
+| `secondary` | `#BCC7DC` | `#545F71` | Neutral text/chrome |
+| `secondaryContainer` | `#3C4858` | `#D8E3F8` | Neutral pills, accent discs |
+| `tertiary` | `#FFB870` | `#8A6420` | Rare accent — see rule below |
+| `tertiaryContainer` | `#693E00` | `#FFDDB1` | Replying pill, cache-hit chip |
+| `error*` | M3 default | M3 default | Wrong / destructive |
+
+**The tertiary rule.** Tertiary is *the* alive accent — warm amber
+against the cool palette. It only fires for moments worth noticing:
+the assist overlay's Replying phase, a cache-hit metric chip. If
+tertiary shows up everywhere it stops meaning anything; default
+neutral state should be `secondaryContainer`.
+
+### Typography
+
+Stock Material 3 today (system sans). The intended brand typeface is
+**Inter** via `androidx.compose:ui-text-google-fonts`, but adopting it
+cleanly needs a `res/values/font_certs.xml` resource with the Google
+Fonts provider certs (a long, opaque base64 file neither AndroidX nor
+Compose ship). Deferred until that resource lands.
+
+When ready, the swap is one file: build a `FontFamily` via
+`GoogleFont.Provider` in `ui/theme/Type.kt`, pass it through
+`Typography(...)`, no screen edits required.
+
+### Dynamic color
+
+**Off by default.** The brand-locked palette is the canonical
+experience; users who want their wallpaper-driven palette toggle it on
+in Settings → Appearance. This is the only way to commit to an
+identity — on Android 12+, dynamic color overrides our scheme on every
+device.
+
+The `HavenCoreTheme(dynamicColor = ...)` parameter is plumbed through
+DataStore (`SettingsRepository.dynamicColorFlow`) so the toggle takes
+effect live without an app restart.
+
+### Brand glyphs
+
+Four shapes make the app recognizable at a glance:
+
+1. **The hero disc + halo** — the `MicLevelHero` in the assist
+   overlay. The 120 dp halo scaling with mic amplitude is the brand's
+   signature motion.
+2. **The status pill** — fully-rounded, color-coded label (`StatusPill`).
+   Used for assist phases, push status, ping outcome.
+3. **The asymmetric user bubble** — `HavenBrandShapes.UserBubble`
+   (large radii except a small bottom-end nip). Distinguishes user
+   turns from assistant cards instantly.
+4. **The accent disc** — small leading icon-on-circle (`AccentDisc`)
+   used in card headers, history rows, default-assistant card.
+
+Reach for these shapes when a surface needs identity, not novelty.
+
 ## The four parameter objects
 
 To change the vibe, edit these and only these:
@@ -121,6 +194,13 @@ buckets:
   sheets. Equivalent to `MaterialTheme.shapes.extraLarge` constrained
   to top corners; named for callsite clarity.
 
+Brand-identity shapes live in `HavenBrandShapes` (also in `Shapes.kt`):
+
+- `HavenBrandShapes.UserBubble` — large radii except a small
+  bottom-end nip (`xs` instead of `lg`). One of the four brand glyphs
+  (see "Visual identity"); the asymmetry is what distinguishes a user
+  turn from an assistant card at a glance.
+
 Reading `MaterialTheme.shapes.large` is the rule — never write
 `RoundedCornerShape(20.dp)` in a screen file.
 
@@ -195,45 +275,55 @@ dominant target and shadows vanish against `HavenBackground`.
 | Token | dp | Use |
 |---|---|---|
 | `Level0` | 0 | App background |
-| `Level1` | 2 | Banners (`ConnectionBanner`) |
+| `Level1` | 2 | Inline `Banner`, user bubble |
 | `Level2` | 4 | Input bars, bottom sheets |
 | `Level3` | 8 | Modal-over-content (rare) |
 
 ## Component patterns
 
-Canonical recipes live (or will live, as use cases land) in
-`ui/components/`. Before writing a new card / banner / pill / state
-surface, check this folder. Patterns the doc anchors:
+Canonical recipes live in `ui/components/`. Before writing a new card
+/ banner / pill / state surface, check this folder.
 
 - **`StatusPill(label, container, content)`** — pill-shaped Surface
-  with label. The assist overlay's status indicator is the canonical
-  instance. Use for any "state-as-text-with-color" affordance.
-- **`AnimatedSwap`** — the phase-swap recipe above, packaged.
-- **`HeroDisc(icon, container, content, size = HavenTokens.Hero.InnerDisc)`**
-  — colored disc with centered icon. Promoted from
-  `voice/AssistVisualizers.kt::StaticHeroIcon`. Screen-level
-  empty / error / explanatory states get a HeroDisc; in-line errors
-  do not.
-- **`EmptyState` / `LoadingState` / `ErrorState`** — the three state
-  surfaces. History screen has the canonical inline implementations;
-  extract to `ui/components/States.kt` when a second screen needs
-  them. `EmptyState` takes an icon (rendered via `HeroDisc`), title,
-  body, optional action button.
-- **`Banner(severity, label, action?)`** — generalization of
-  `ConnectionBanner`. `severity` maps to a color role (info →
-  secondaryContainer, warning → tertiaryContainer, error →
-  errorContainer). Use for any persistent inline status row.
-- **`BottomSheetSurface`** — the assist-overlay surface setup
-  (`HavenTokens.Radius.sheetTop`, `Level2` elevation,
-  `animateContentSize(Slow)`, drag handle). New sheets reuse this so
-  they feel identical to the assist overlay.
+  with label. The assist overlay's phase indicator is the canonical
+  caller. Use for any "state-as-text-with-color" affordance.
+- **`Banner(severity, text, icon?, actionLabel?, onAction?)`** —
+  inline status row. `severity` maps to a color role (`Info` /
+  `Progress` → secondaryContainer, `Warning` → tertiaryContainer,
+  `Error` → errorContainer). Used for ping result, push status,
+  connection state.
+- **`HeroDisc(icon, discColor, iconColor)`** — 120 dp halo with a
+  76 dp inner disc and 36 dp icon. Screen-level empty / error /
+  explanatory surfaces; the assist overlay's terminal phases.
+- **`AccentDisc(icon, discColor, iconColor, size = 32.dp, iconSize = 18.dp)`**
+  — small inline leading-icon variant of `HeroDisc`. Use in card
+  headers, list rows, banner-style affordances. Settings cards,
+  History rows, and the default-assistant card all use it.
+- **`EmptyState(icon, title, body?)` / `LoadingState()` /
+  `ErrorState(title, message, onRetry?)`** — three canonical
+  screen-level state surfaces. All center vertically, all use a
+  `HeroDisc` for the icon. In-line errors (banners, field validation)
+  belong in `Banner`, not here.
+- **`AnimatedSwap(targetState, contentKey?) { state -> ... }`** —
+  packaged phase-swap recipe (the spec from the Motion section). Used
+  by the assist overlay's `PhaseBody`, History's loading→loaded→error
+  swap, the Settings ping result, the push status.
+- **`BottomSheetSurface(maxHeight = ∞) { ... }`** — assist-overlay
+  surface anatomy: top-only `extraLarge` radius, `Level2` tonal
+  elevation, `animateContentSize(Slow)`, drag handle. New sheets reuse
+  this so they feel identical to the assist overlay.
 
-### Card vs OutlinedCard
+### Card vs OutlinedCard vs flat row
 
-- Filled `Card` for content the user **consumes** — message bubbles,
-  assistant reply, settings sections.
+- Filled `Card` (or `Surface`) for content the user **consumes** —
+  message bubbles, assistant reply, settings sections.
 - `OutlinedCard` for content the user **structurally interacts with**
-  — `ToolCallCard`, `ReasoningCard`, anything expandable.
+  on its own — settings groups in other apps, single isolated
+  expandable cards.
+- **Flat row** for content that lives **inside** another card —
+  `ToolCallRow`, `ReasoningRow` are inline expandable rows inside
+  `AssistantTurnCard`, not nested cards. The parent card owns the
+  visual frame; nesting cards adds noise without adding meaning.
 
 ### Accent rule (tertiary)
 
@@ -281,7 +371,10 @@ file."
 
 ## Vibe-shift recipes
 
-Three worked examples — each is a single-file edit.
+We've picked the vibe (Quiet Tech, see "Visual identity" above), but
+the system is still small enough to re-skin in one or two file edits
+if the identity ever needs to change. Three worked examples — each is
+a single-file edit.
 
 ### Warmer / peachy
 
@@ -307,14 +400,11 @@ on every device, every time. Trade variety for identity.
 
 ## Known gotchas
 
-- **Light-scheme parity gap**: the original `LightScheme` only
-  overrode primary / secondary; background / surface / tertiary /
-  error fell back to M3 defaults, so light mode looked generic.
-  `HavenLightColors` fixes this once it lands.
-- **Dynamic color hides brand colors**: on Android 12+, `HavenPrimary`
-  is never visible by default. The wallpaper wins. Anchor the brand
-  with non-color elements (logo glyph, the assist overlay's specific
-  shape language) — or expose the dynamic-color toggle.
+- **Dynamic color hides brand colors**: on Android 12+, dynamic color
+  (when enabled) overrides every brand role. We default to OFF and
+  expose a Settings toggle, but if a user opts in, the Quiet Tech
+  palette is invisible — the `BrandSeed` is the fallback only. Anchor
+  identity with the four brand glyphs above when this matters.
 - **Scrim was hardcoded** in `voice/AssistOverlay.kt` as
   `Color.Black.copy(alpha = 0.4f)`. The replacement is
   `MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f)` — adapts to
