@@ -1,5 +1,6 @@
 package ai.havencore.companion.ui.chat.components
 
+import ai.havencore.companion.ui.theme.HavenTokens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,11 +24,11 @@ fun SummaryResetDivider(reason: String, summary: String, modifier: Modifier = Mo
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
+            .padding(vertical = HavenTokens.Spacing.sm),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.sm),
         ) {
             HorizontalDivider(modifier = Modifier.weight(1f))
             Icon(
@@ -47,11 +48,11 @@ fun SummaryResetDivider(reason: String, summary: String, modifier: Modifier = Mo
                 shape = MaterialTheme.shapes.small,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 6.dp),
+                    .padding(top = HavenTokens.Spacing.sm),
             ) {
                 Text(
                     text = summary,
-                    modifier = Modifier.padding(8.dp),
+                    modifier = Modifier.padding(HavenTokens.Spacing.sm),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }

@@ -2,6 +2,7 @@ package ai.havencore.companion.ui.chat.components
 
 import ai.havencore.companion.ui.chat.TurnEvent
 import ai.havencore.companion.ui.chat.TurnItem
+import ai.havencore.companion.ui.theme.HavenTokens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -24,47 +26,63 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun AssistantTurnCard(turn: TurnItem.AssistantTurn, modifier: Modifier = Modifier) {
-    Column(
+    Surface(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        shape = MaterialTheme.shapes.large,
+        tonalElevation = HavenTokens.Elevation.Level1,
     ) {
-        if (turn.finalText == null && turn.errorText == null) {
-            ThinkingRow(turn.thinkingIteration)
-        }
-        for (event in turn.events) {
-            when (event) {
-                is TurnEvent.ToolPair -> ToolCallCard(event)
-                is TurnEvent.Reasoning -> ReasoningCard(event)
+        Column(
+            modifier = Modifier.padding(HavenTokens.Spacing.lg),
+            verticalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.sm),
+        ) {
+            if (turn.finalText == null && turn.errorText == null) {
+                ThinkingRow(turn.thinkingIteration)
             }
-        }
-        turn.finalText?.takeIf { it.isNotBlank() }?.let { text ->
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodyLarge,
-            )
-        }
-        turn.errorText?.let { msg ->
-            Surface(
-                color = MaterialTheme.colorScheme.errorContainer,
-                contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                shape = MaterialTheme.shapes.small,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Row(
-                    modifier = Modifier.padding(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.Default.ErrorOutline,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(msg, style = MaterialTheme.typography.bodyMedium)
+            for (event in turn.events) {
+                when (event) {
+                    is TurnEvent.ToolPair -> ToolCallRow(event)
+                    is TurnEvent.Reasoning -> ReasoningRow(event)
+                    is TurnEvent.DeviceActionItem -> DeviceActionRow(event)
                 }
             }
+            turn.finalText?.takeIf { it.isNotBlank() }?.let { text ->
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            turn.errorText?.let { msg ->
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    shape = MaterialTheme.shapes.small,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(HavenTokens.Spacing.sm),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Default.ErrorOutline,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(Modifier.width(HavenTokens.Spacing.sm))
+                        Text(msg, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+            turn.metric?.let { metric ->
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                    modifier = Modifier.padding(top = HavenTokens.Spacing.xs),
+                )
+                MetricChips(metric)
+            }
         }
-        turn.metric?.let { MetricChips(it) }
     }
 }
 
@@ -77,12 +95,17 @@ private fun ThinkingRow(iteration: Int?) {
     }
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.sm),
     ) {
         CircularProgressIndicator(
             modifier = Modifier.size(20.dp),
             strokeWidth = 2.dp,
+            color = MaterialTheme.colorScheme.primary,
         )
-        Text(label, style = MaterialTheme.typography.bodyMedium)
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
     }
 }

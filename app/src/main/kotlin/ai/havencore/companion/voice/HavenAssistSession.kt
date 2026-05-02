@@ -4,11 +4,14 @@ import ai.havencore.companion.HavenCoreApp
 import ai.havencore.companion.MainActivity
 import ai.havencore.companion.audio.MicRecorder
 import ai.havencore.companion.audio.TtsPlayer
+import ai.havencore.companion.data.DeviceAction
 import ai.havencore.companion.data.ServerConfig
 import ai.havencore.companion.net.ChatEvent
 import ai.havencore.companion.net.ChatWsSession
 import ai.havencore.companion.net.ParsedFrame
+import ai.havencore.companion.data.ThemeMode
 import ai.havencore.companion.ui.theme.HavenCoreTheme
+import ai.havencore.companion.ui.theme.resolveDarkTheme
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -20,6 +23,8 @@ import android.service.voice.VoiceInteractionSession
 import android.util.Log
 import android.view.View
 import android.view.WindowManager
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.content.ContextCompat
@@ -98,7 +103,14 @@ class HavenAssistSession(context: Context) : VoiceInteractionSession(context) {
                 ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed,
             )
             setContent {
-                HavenCoreTheme {
+                val dynamicColor by app.settings.dynamicColorFlow
+                    .collectAsState(initial = false)
+                val themeMode by app.settings.themeModeFlow
+                    .collectAsState(initial = ThemeMode.System)
+                HavenCoreTheme(
+                    darkTheme = resolveDarkTheme(themeMode),
+                    dynamicColor = dynamicColor,
+                ) {
                     AssistOverlay(
                         stateFlow = state,
                         amplitudeFlow = app.mic.currentAmplitude,
@@ -305,6 +317,17 @@ class HavenAssistSession(context: Context) : VoiceInteractionSession(context) {
                     sessionScope.launch {
                         delay(2_500)
                         finish()
+                    }
+                }
+                is ChatEvent.DeviceAction -> {
+                    val parsed = DeviceAction.fromEvent(ev)
+                    if (parsed != null) {
+                        sessionScope.launch(Dispatchers.IO) {
+                            app.deviceActionDispatcher.dispatch(parsed)
+                        }
+                        state.update { it.copy(actionCount = it.actionCount + 1) }
+                    } else {
+                        Log.w(TAG, "device_action with unsupported action=${ev.action}")
                     }
                 }
                 is ChatEvent.Thinking,

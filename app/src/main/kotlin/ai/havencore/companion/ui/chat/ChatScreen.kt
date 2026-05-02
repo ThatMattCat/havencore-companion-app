@@ -2,10 +2,12 @@ package ai.havencore.companion.ui.chat
 
 import ai.havencore.companion.ui.chat.components.AssistantTurnCard
 import ai.havencore.companion.ui.chat.components.AutoSpeakToggle
-import ai.havencore.companion.ui.chat.components.ConnectionBanner
 import ai.havencore.companion.ui.chat.components.MicButton
 import ai.havencore.companion.ui.chat.components.SummaryResetDivider
 import ai.havencore.companion.ui.chat.components.UserBubble
+import ai.havencore.companion.ui.components.Banner
+import ai.havencore.companion.ui.components.BannerSeverity
+import ai.havencore.companion.ui.theme.HavenTokens
 import ai.havencore.companion.voice.DefaultAssistantHelper
 import android.Manifest
 import android.content.pm.PackageManager
@@ -182,6 +184,7 @@ fun ChatScreen(
                 voice = state.voice,
                 connected = state.connection is ConnectionUi.Connected,
                 turnInFlight = state.turnInFlight,
+                amplitudeFlow = vm.micAmplitude,
                 onDraftChange = vm::updateDraft,
                 onSend = vm::send,
                 onMicTap = ::onMicTap,
@@ -194,14 +197,17 @@ fun ChatScreen(
                 .padding(padding)
                 .fillMaxSize(),
         ) {
-            ConnectionBanner(state.connection, onRetry = vm::retry)
+            ChatConnectionBanner(state.connection, onRetry = vm::retry)
             LazyColumn(
                 state = listState,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(
+                    horizontal = HavenTokens.Spacing.lg,
+                    vertical = HavenTokens.Spacing.md,
+                ),
+                verticalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.md),
             ) {
                 items(state.turns, key = { it.key }) { turn ->
                     when (turn) {
@@ -219,24 +225,68 @@ fun ChatScreen(
 }
 
 @Composable
+private fun ChatConnectionBanner(state: ConnectionUi, onRetry: () -> Unit) {
+    androidx.compose.animation.AnimatedVisibility(
+        visible = state !is ConnectionUi.Connected,
+    ) {
+        when (state) {
+            ConnectionUi.Connected -> Unit
+            ConnectionUi.Connecting -> Banner(
+                severity = BannerSeverity.Progress,
+                text = "Connecting…",
+                modifier = Modifier.padding(
+                    horizontal = HavenTokens.Spacing.lg,
+                    vertical = HavenTokens.Spacing.sm,
+                ),
+            )
+            is ConnectionUi.Reconnecting -> Banner(
+                severity = BannerSeverity.Progress,
+                text = "Reconnecting (attempt ${state.attempt}, ${state.nextMs / 1000}s)…",
+                modifier = Modifier.padding(
+                    horizontal = HavenTokens.Spacing.lg,
+                    vertical = HavenTokens.Spacing.sm,
+                ),
+            )
+            is ConnectionUi.Failed -> Banner(
+                severity = BannerSeverity.Error,
+                text = "Connection failed: ${state.message}",
+                actionLabel = "Retry",
+                onAction = onRetry,
+                modifier = Modifier.padding(
+                    horizontal = HavenTokens.Spacing.lg,
+                    vertical = HavenTokens.Spacing.sm,
+                ),
+            )
+        }
+    }
+}
+
+@Composable
 private fun ChatInputBar(
     draft: String,
     voice: VoiceUi,
     connected: Boolean,
     turnInFlight: Boolean,
+    amplitudeFlow: kotlinx.coroutines.flow.StateFlow<Int>,
     onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
     onMicTap: () -> Unit,
 ) {
-    Surface(tonalElevation = 4.dp, modifier = Modifier.fillMaxWidth()) {
+    Surface(
+        tonalElevation = HavenTokens.Elevation.Level2,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
                 .imePadding()
-                .padding(horizontal = 8.dp, vertical = 6.dp),
+                .padding(
+                    horizontal = HavenTokens.Spacing.lg,
+                    vertical = HavenTokens.Spacing.sm,
+                ),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.sm),
         ) {
             MicButton(
                 voice = voice,
@@ -244,6 +294,7 @@ private fun ChatInputBar(
                 // in flight. Stopping a recording / playback never needs the
                 // socket to be live; starting one does.
                 enabled = connected && !turnInFlight,
+                amplitudeFlow = amplitudeFlow,
                 onTap = onMicTap,
             )
             OutlinedTextField(
@@ -252,6 +303,7 @@ private fun ChatInputBar(
                 modifier = Modifier.weight(1f),
                 placeholder = { Text("Message…") },
                 maxLines = 4,
+                shape = MaterialTheme.shapes.large,
             )
             IconButton(
                 onClick = onSend,
@@ -261,7 +313,17 @@ private fun ChatInputBar(
                 enabled = connected && !turnInFlight && voice == VoiceUi.Idle &&
                     draft.isNotBlank(),
             ) {
-                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Send,
+                    contentDescription = "Send",
+                    tint = if (connected && !turnInFlight && voice == VoiceUi.Idle &&
+                        draft.isNotBlank()
+                    ) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
             }
         }
     }

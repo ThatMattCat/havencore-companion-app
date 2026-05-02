@@ -15,6 +15,12 @@ AI smart-home assistant. The agent itself lives in the sibling repo at
   lockscreen, `Intent.ACTION_ASSIST`) via a `VoiceInteractionService`
 - Inbound push notifications via UnifiedPush + ntfy with deep-link
   tap-through into chat
+- Device-side actions: the agent emits `device_action` WS events
+  alongside its normal `tool_call` / `tool_result` pair when it calls a
+  device-targeted MCP tool, and the app fires the matching native
+  Intent (e.g. `set_alarm` → `AlarmClock.ACTION_SET_ALARM` against the
+  user's Clock app). Currently `set_alarm` is the only wired action;
+  the plumbing is reusable.
 
 `README.md` is the user-facing description; this file is for working in
 the codebase.
@@ -82,7 +88,11 @@ app/src/main/kotlin/ai/havencore/companion/
 ├── MainActivity.kt              # single-activity Compose host; onNewIntent feeds EXTRA_SESSION_ID into pendingSessionId StateFlow for push deep-links
 ├── data/
 │   ├── ServerConfig.kt
-│   └── SettingsRepository.kt    # DataStore<Preferences>: baseUrl, deviceName, lastSessionId, autoSpeak, default_assistant_prompt_seen, push_*, silence_timeout_ms
+│   ├── ThemeMode.kt             # System / Light / Dark enum (DataStore-persisted)
+│   ├── SettingsRepository.kt    # DataStore<Preferences>: baseUrl, deviceName, lastSessionId, autoSpeak, default_assistant_prompt_seen, push_*, silence_timeout_ms, dynamic_color, theme_mode
+│   └── DeviceAction.kt          # sealed DeviceAction (SetAlarm, ...) + DeviceActionResult; fromEvent maps ChatEvent.DeviceAction wire payload to typed action
+├── device/
+│   └── DeviceActionDispatcher.kt # fires native Intents for parsed DeviceActions (e.g. AlarmClock.ACTION_SET_ALARM with FLAG_ACTIVITY_NEW_TASK + EXTRA_SKIP_UI)
 ├── audio/
 │   ├── MicRecorder.kt           # AAC-in-MP4 capture with peak-amplitude polling for hasSpeech() gate; exposes currentAmplitude for live endpointing
 │   └── TtsPlayer.kt             # Media3 ExoPlayer wrapper for TTS playback
@@ -118,11 +128,18 @@ app/src/main/kotlin/ai/havencore/companion/
     ├── history/{HistoryScreen.kt, HistoryViewModel.kt}
     ├── chat/
     │   ├── ChatScreen.kt
-    │   ├── ChatViewModel.kt
-    │   ├── ChatUiState.kt
+    │   ├── ChatViewModel.kt    # exposes micAmplitude flow for input-bar halo; reduces ChatEvent.DeviceAction by dispatching the parsed action and appending a TurnEvent.DeviceActionItem
+    │   ├── ChatUiState.kt       # TurnEvent.DeviceActionItem alongside ToolPair / Reasoning
     │   ├── ResumeMapper.kt      # OpenAI messages -> Turn list
-    │   └── components/{UserBubble, AssistantTurnCard, ToolCallCard, ReasoningCard, MetricChips, SummaryResetDivider, ConnectionBanner, AutoSpeakToggle, MicButton}.kt
-    └── theme/{Color.kt, Theme.kt, Type.kt}
+    │   └── components/{UserBubble, AssistantTurnCard, ToolCallCard (ToolCallRow), ReasoningCard (ReasoningRow), DeviceActionCard (DeviceActionRow), MetricChips, SummaryResetDivider, AutoSpeakToggle, MicButton}.kt
+    ├── components/             # canonical recipes — see docs/design-system.md
+    │   ├── HeroDisc.kt          # 120 dp hero + AccentDisc (32 dp inline leading icon)
+    │   ├── StatusPill.kt
+    │   ├── Banner.kt            # severity-driven inline status row
+    │   ├── States.kt            # EmptyState / LoadingState / ErrorState
+    │   ├── AnimatedSwap.kt      # phase-swap recipe (fade + rise + size)
+    │   └── BottomSheetSurface.kt
+    └── theme/{Color.kt, Theme.kt, Type.kt, Tokens.kt, Shapes.kt}  # Quiet Tech identity; see docs/design-system.md
 ```
 
 ## Backend the app talks to
@@ -142,6 +159,17 @@ Currently consumed:
   agent stores a `(device_id, device_label, endpoint)` row per
   registered device; its `NtfyNotifier` later POSTs payloads directly
   to each row's `endpoint`
+
+The agent also emits `device_action` events on `/ws/chat` whose
+companion-side handling lives in `data/DeviceAction.kt` +
+`device/DeviceActionDispatcher.kt` + the `ChatViewModel` /
+`HavenAssistSession` reducers. The agent enumerates which tool names
+trigger a device-action event in a `DEVICE_ACTION_TOOLS` frozenset on
+its `orchestrator.py`; the wire envelope is documented in
+`docs/wire-protocol.md`. Adding a new action means: define the MCP
+tool agent-side, add it to `DEVICE_ACTION_TOOLS`, add a `sealed
+DeviceAction` variant + parser branch + dispatcher branch + a
+display-row arm in `DeviceActionCard.kt` here.
 
 The assist overlay opens its own `ChatWsSession` so the foreground
 chat WS is not knocked off, but binds to the same `lastSessionId` so
@@ -172,6 +200,44 @@ Tighten when remote access becomes real.
   phase → visualizer mapping, auto-endpointing silence watcher, and the
   Samsung-specific gotchas (`RecognitionService` stub, role-request
   intent fallback to `Settings.ACTION_VOICE_INPUT_SETTINGS`).
+- `docs/design-system.md` — color / typography / shape / spacing /
+  motion / elevation tokens, component patterns, vibe-shift recipes,
+  and the pre-merge UI checklist. Read before any UI change.
+
+## Design system
+
+`docs/design-system.md` is the source of truth for the look and feel.
+The voice assist overlay (`voice/AssistOverlay.kt` +
+`voice/AssistVisualizers.kt`) is the visual reference; every other
+surface should feel like its sibling.
+
+Hard rules for new UI:
+
+- Spacing, radius, motion, elevation, hero sizes come from
+  `HavenTokens` (`ui/theme/Tokens.kt`). Color comes from
+  `MaterialTheme.colorScheme`. Shape comes from `MaterialTheme.shapes`.
+  Type comes from `MaterialTheme.typography`. Hardcoded `dp` literals
+  only inside `ui/theme/` or as one-off pixel-precise visual constants
+  with a justifying comment. No `Color(0x...)` literal outside
+  `ui/theme/Color.kt`.
+- Before adding a new card / banner / pill / state surface, check
+  `ui/components/` first — most patterns are already named. The
+  canonical recipes (`StatusPill`, `AnimatedSwap`, `HeroDisc`,
+  `EmptyState` / `LoadingState` / `ErrorState`, `Banner`,
+  `BottomSheetSurface`) are listed in the design doc.
+- Walk the pre-merge UI checklist at the bottom of
+  `docs/design-system.md` before committing UI changes.
+
+The token migration is staged. The foundation is in place:
+`ui/theme/Tokens.kt`, `ui/theme/Shapes.kt`, the full
+`HavenLightColors` / `HavenDarkColors` schemes in `Color.kt`, and the
+wired `HavenCoreTheme` (color + shapes + typography). What's left is
+migrating screens one at a time (Settings → History → Chat →
+AssistOverlay) to consume these instead of literal `dp` / `Color(0x...)`
+/ `RoundedCornerShape(N.dp)`. While migration is in flight, prefer
+reading from `MaterialTheme` and `HavenTokens` over duplicating
+literals — even in screens that haven't been migrated yet, new code
+should follow the rules.
 
 ## Voice-friendly content
 
@@ -189,6 +255,10 @@ unicode.
 - **No emojis in code or docs** unless explicitly requested.
 - **License**: LGPL-2.1, mirroring havencore. Don't change without
   asking.
+- **UI work**: read `docs/design-system.md` first — it covers tokens,
+  component patterns, color roles, the pre-merge checklist, and the
+  vibe-shift hooks. Adding a new screen, card, banner, pill, or state
+  surface? Start there.
 
 ## Workflow gotchas
 

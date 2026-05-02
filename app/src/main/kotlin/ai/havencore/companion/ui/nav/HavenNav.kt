@@ -137,6 +137,7 @@ fun HavenNav(
                             ttsApi = container.ttsApi,
                             mic = container.mic,
                             ttsPlayer = container.ttsPlayer,
+                            deviceActionDispatcher = container.deviceActionDispatcher,
                             sessionToResume = sid,
                         )
                     }

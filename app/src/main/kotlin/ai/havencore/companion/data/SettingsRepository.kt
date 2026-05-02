@@ -28,6 +28,8 @@ class SettingsRepository(context: Context) {
     private val keyPushEndpoint = stringPreferencesKey("push_endpoint")
     private val keyPushDistributorPkg = stringPreferencesKey("push_distributor_pkg")
     private val keySilenceTimeoutMs = longPreferencesKey("silence_timeout_ms")
+    private val keyDynamicColor = booleanPreferencesKey("dynamic_color")
+    private val keyThemeMode = stringPreferencesKey("theme_mode")
 
     val configFlow: Flow<ServerConfig> = store.data.map { prefs ->
         ServerConfig(
@@ -64,6 +66,21 @@ class SettingsRepository(context: Context) {
 
     suspend fun setAutoSpeak(on: Boolean) {
         store.edit { prefs -> prefs[keyAutoSpeak] = on }
+    }
+
+    val dynamicColorFlow: Flow<Boolean> =
+        store.data.map { prefs -> prefs[keyDynamicColor] ?: false }
+
+    suspend fun setDynamicColor(on: Boolean) {
+        store.edit { prefs -> prefs[keyDynamicColor] = on }
+    }
+
+    val themeModeFlow: Flow<ThemeMode> = store.data.map { prefs ->
+        ThemeMode.fromKey(prefs[keyThemeMode])
+    }
+
+    suspend fun setThemeMode(mode: ThemeMode) {
+        store.edit { prefs -> prefs[keyThemeMode] = mode.key }
     }
 
     val defaultAssistantPromptSeenFlow: Flow<Boolean> =

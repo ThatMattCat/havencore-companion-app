@@ -1,5 +1,7 @@
 package ai.havencore.companion.ui.chat
 
+import ai.havencore.companion.data.DeviceAction
+import ai.havencore.companion.data.DeviceActionResult
 import ai.havencore.companion.net.ChatEvent
 import kotlinx.serialization.json.JsonObject
 
@@ -63,5 +65,10 @@ sealed interface TurnEvent {
         val args: JsonObject,
         val result: String? = null,
         val ms: Int? = null,
+    ) : TurnEvent
+    data class DeviceActionItem(
+        val action: String,
+        val parsed: DeviceAction?,
+        val result: DeviceActionResult,
     ) : TurnEvent
 }

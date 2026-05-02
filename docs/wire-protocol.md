@@ -56,6 +56,44 @@ Plain envelope, no type field. The agent's main path treats anything
 without `"type":"session"` as a user message (`chat.py` near line 273:
 `user_message = data.get("message", "")`).
 
+### `device_action` event (Phase 5)
+
+The agent can ask the device to perform a native action (e.g. set an
+alarm). The orchestrator emits a `device_action` event in addition to
+the normal `tool_call` / `tool_result` pair when the LLM invokes a
+device-targeted tool — the pair stays as the server-side breadcrumb,
+the new event is what the device acts on.
+
+```json
+{
+  "type": "device_action",
+  "action": "set_alarm",
+  "args": { "hour": 7, "minute": 0, "label": "Standup" },
+  "id": "<tool_call_id>",
+  "device_id": "<device name from session>"
+}
+```
+
+- `action` is the tool name (matches the corresponding `tool_call.tool`).
+- `args` schema is per-action. For `set_alarm`: required `hour` (0–23)
+  and `minute` (0–59); optional `label` (string) and `days_of_week`
+  (list of 1=Sun … 7=Sat for repeating alarms).
+- `id` ties the event back to the `tool_call.id` so the UI can
+  correlate the action card with the tool-call card. May be null.
+- `device_id` is informational; the agent already routes the event to
+  the session's device via the per-session pubsub, so no client-side
+  filtering is needed.
+
+The companion app's `parseChatFrame` lists `device_action` in
+`knownEventTypes`; an old client receiving an unknown action name
+(future `set_timer`, etc.) renders an inert "(unsupported)" card and
+keeps going. Older clients without `device_action` support ignore the
+event entirely via the existing `ParsedFrame.Unknown` path.
+
+The Android side requires `<uses-permission
+android:name="com.android.alarm.permission.SET_ALARM"/>` to fire the
+intent silently with `EXTRA_SKIP_UI=true`.
+
 ### `summary_reset` is out-of-band
 
 The agent's session pool delivers `summary_reset` events between or even

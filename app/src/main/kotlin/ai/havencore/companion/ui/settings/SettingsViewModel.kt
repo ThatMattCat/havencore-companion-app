@@ -2,6 +2,7 @@ package ai.havencore.companion.ui.settings
 
 import ai.havencore.companion.data.ServerConfig
 import ai.havencore.companion.data.SettingsRepository
+import ai.havencore.companion.data.ThemeMode
 import ai.havencore.companion.net.ConversationsApi
 import ai.havencore.companion.push.PushManager
 import ai.havencore.companion.push.PushUi
@@ -48,6 +49,28 @@ class SettingsViewModel(
 
     fun setSilenceTimeoutMs(ms: Long) {
         viewModelScope.launch { repo.setSilenceTimeoutMs(ms) }
+    }
+
+    val dynamicColor: StateFlow<Boolean> =
+        repo.dynamicColorFlow.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = false,
+        )
+
+    fun setDynamicColor(on: Boolean) {
+        viewModelScope.launch { repo.setDynamicColor(on) }
+    }
+
+    val themeMode: StateFlow<ThemeMode> =
+        repo.themeModeFlow.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = ThemeMode.System,
+        )
+
+    fun setThemeMode(mode: ThemeMode) {
+        viewModelScope.launch { repo.setThemeMode(mode) }
     }
 
     private val _ping = MutableStateFlow<PingState>(PingState.Untested)

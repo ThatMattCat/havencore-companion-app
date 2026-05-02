@@ -15,6 +15,12 @@ deep-link tap-through to chat. Voice turns from any entry point land in
 the same History row; push notifications with a `session_id` deep-link
 to the originating thread.
 
+The agent can also ask the device to perform native actions — currently
+just `set_alarm`, which schedules an alarm in the Clock app — via a
+new `device_action` WebSocket event emitted alongside the normal
+`tool_call` / `tool_result` pair. See [In-app → Device
+actions](#device-actions) below.
+
 ## Status
 
 | Phase | Scope                                                                | State        |
@@ -136,6 +142,30 @@ the typed and voice-in-app turns.
 The assist overlay's mic capture is user-stopped — tap the Stop button
 in the overlay to release the mic. VAD-based auto-stop is deferred to
 the multi-turn redesign.
+
+### Device actions
+
+Some user requests are best satisfied by an Android Intent rather than
+a server-side tool — setting an alarm, starting a timer, opening the
+camera. The companion app exposes a small surface for this: when the
+agent's LLM calls a *device-targeted* MCP tool, the agent emits a
+`device_action` event on `/ws/chat` with a structured `args` payload,
+and the app fires the corresponding native Intent silently
+(`EXTRA_SKIP_UI=true`, requires the normal-permission
+`com.android.alarm.permission.SET_ALARM` for the alarm case).
+
+The chat screen renders a card alongside the usual `tool_call`
+breadcrumb — e.g. "Set alarm for 7:00 AM" with the system Clock as
+the visual confirmation. The assist overlay shows a chip ("1 action")
+during its Thinking phase and lets the LLM's natural-language reply
+play out via TTS; the alarm itself is already scheduled by the time
+you hear "OK, I've set an alarm for 7am."
+
+Currently `set_alarm` is the only wired action. The plumbing is
+reusable: a new action means one MCP tool definition agent-side and
+one new sealed-class variant + intent dispatcher branch + display row
+on the app side. The wire format is documented in
+[`docs/wire-protocol.md`](docs/wire-protocol.md).
 
 ### Push notifications
 

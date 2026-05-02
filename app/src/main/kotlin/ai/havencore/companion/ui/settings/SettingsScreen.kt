@@ -2,7 +2,13 @@ package ai.havencore.companion.ui.settings
 
 import ai.havencore.companion.R
 import ai.havencore.companion.data.SettingsRepository
+import ai.havencore.companion.data.ThemeMode
 import ai.havencore.companion.push.PushUi
+import ai.havencore.companion.ui.components.AccentDisc
+import ai.havencore.companion.ui.components.AnimatedSwap
+import ai.havencore.companion.ui.components.Banner
+import ai.havencore.companion.ui.components.BannerSeverity
+import ai.havencore.companion.ui.theme.HavenTokens
 import ai.havencore.companion.voice.DefaultAssistantHelper
 import android.Manifest
 import android.content.Intent
@@ -17,26 +23,30 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -66,12 +76,11 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
     val isAssistantHeld by vm.isAssistantHeld.collectAsState()
     val pushUi by vm.pushUi.collectAsState()
     val silenceTimeoutMs by vm.silenceTimeoutMs.collectAsState()
+    val dynamicColor by vm.dynamicColor.collectAsState()
+    val themeMode by vm.themeMode.collectAsState()
 
     val ctx = LocalContext.current
 
-    // Re-check the assistant role + distributor list on every resume so
-    // returning from Settings (role picker, ntfy install) flips state
-    // without an app restart.
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         vm.onResume()
     }
@@ -97,16 +106,36 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
         Column(
             modifier = Modifier
                 .padding(padding)
-                .padding(16.dp)
+                .padding(
+                    horizontal = HavenTokens.Spacing.lg,
+                    vertical = HavenTokens.Spacing.md,
+                )
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.md),
         ) {
-            DefaultAssistantBanner(
+            DefaultAssistantCard(
                 held = isAssistantHeld,
                 onLaunchPicker = {
                     ctx.startActivity(DefaultAssistantHelper.pickerIntent())
                 },
+            )
+
+            ConnectionCard(
+                baseUrl = baseUrl,
+                onBaseUrlChange = { baseUrl = it },
+                deviceName = deviceName,
+                onDeviceNameChange = { deviceName = it },
+                ping = ping,
+                onSave = { vm.save(baseUrl, deviceName) },
+                onTest = vm::testConnection,
+            )
+
+            AppearanceCard(
+                themeMode = themeMode,
+                onThemeModeChange = vm::setThemeMode,
+                dynamicColor = dynamicColor,
+                onDynamicColorChange = vm::setDynamicColor,
             )
 
             VoiceCard(
@@ -119,65 +148,181 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                 onToggle = vm::togglePush,
                 onRetry = vm::retryRegistration,
             )
+        }
+    }
+}
 
-            OutlinedTextField(
-                value = baseUrl,
-                onValueChange = { baseUrl = it },
-                label = { Text("Server URL") },
-                placeholder = { Text("http://havencore.local") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            OutlinedTextField(
-                value = deviceName,
-                onValueChange = { deviceName = it },
-                label = { Text("Device name") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
+@Composable
+private fun SettingsCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    description: String? = null,
+    content: @Composable () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(HavenTokens.Spacing.lg),
+            verticalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.sm),
+        ) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.md),
             ) {
-                Button(onClick = { vm.save(baseUrl, deviceName) }) {
-                    Text("Save")
-                }
-                OutlinedButton(
-                    onClick = vm::testConnection,
-                    enabled = ping !is PingState.InFlight,
-                ) {
-                    Text("Test connection")
-                }
+                AccentDisc(
+                    icon = icon,
+                    discColor = MaterialTheme.colorScheme.secondaryContainer,
+                    iconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                )
             }
+            if (description != null) {
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            content()
+        }
+    }
+}
 
-            HorizontalDivider()
-
-            when (val s = ping) {
+@Composable
+private fun ConnectionCard(
+    baseUrl: String,
+    onBaseUrlChange: (String) -> Unit,
+    deviceName: String,
+    onDeviceNameChange: (String) -> Unit,
+    ping: PingState,
+    onSave: () -> Unit,
+    onTest: () -> Unit,
+) {
+    SettingsCard(
+        icon = Icons.Default.Cloud,
+        title = "Connection",
+        description = "Where the HavenCore agent is reachable on your network.",
+    ) {
+        OutlinedTextField(
+            value = baseUrl,
+            onValueChange = onBaseUrlChange,
+            label = { Text("Server URL") },
+            placeholder = { Text("http://havencore.local") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = deviceName,
+            onValueChange = onDeviceNameChange,
+            label = { Text("Device name") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Button(onClick = onSave) { Text("Save") }
+            OutlinedButton(
+                onClick = onTest,
+                enabled = ping !is PingState.InFlight,
+            ) {
+                Text("Test connection")
+            }
+        }
+        AnimatedSwap(
+            targetState = ping,
+            contentKey = { it::class },
+            label = "ping",
+        ) { state ->
+            when (state) {
                 PingState.Untested -> Text(
-                    "Untested. Save your server URL, then tap Test connection.",
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = "Save your URL, then tap Test connection.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                PingState.InFlight -> Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                    Text("Pinging …")
-                }
-                is PingState.Ok -> Text(
-                    "Connected. /api/conversations returned ${s.count} conversation(s).",
-                    color = MaterialTheme.colorScheme.primary,
+                PingState.InFlight -> Banner(
+                    severity = BannerSeverity.Progress,
+                    text = "Pinging…",
                 )
-                is PingState.Err -> Text(
-                    "Failed: ${s.message}",
-                    color = MaterialTheme.colorScheme.error,
+                is PingState.Ok -> Banner(
+                    severity = BannerSeverity.Info,
+                    text = "Connected · ${state.count} conversation(s) on the server.",
+                )
+                is PingState.Err -> Banner(
+                    severity = BannerSeverity.Error,
+                    text = "Failed: ${state.message}",
                 )
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AppearanceCard(
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit,
+    dynamicColor: Boolean,
+    onDynamicColorChange: (Boolean) -> Unit,
+) {
+    SettingsCard(
+        icon = Icons.Default.Palette,
+        title = "Appearance",
+    ) {
+        Text(
+            text = "Theme",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        val options = ThemeMode.entries
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            options.forEachIndexed { index, mode ->
+                SegmentedButton(
+                    selected = mode == themeMode,
+                    onClick = { onThemeModeChange(mode) },
+                    shape = SegmentedButtonDefaults.itemShape(
+                        index = index,
+                        count = options.size,
+                    ),
+                ) {
+                    Text(mode.label())
+                }
+            }
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.md),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = HavenTokens.Spacing.xs),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Match my wallpaper",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    text = "Use Android's dynamic color instead of the HavenCore palette.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = dynamicColor,
+                onCheckedChange = onDynamicColorChange,
+            )
+        }
+    }
+}
+
+private fun ThemeMode.label(): String = when (this) {
+    ThemeMode.System -> "System"
+    ThemeMode.Light -> "Light"
+    ThemeMode.Dark -> "Dark"
 }
 
 @Composable
@@ -185,42 +330,31 @@ private fun VoiceCard(
     silenceTimeoutMs: Long,
     onChange: (Long) -> Unit,
 ) {
-    // Slider works in float seconds; snap to SILENCE_TIMEOUT_STEP_MS,
-    // then convert back to ms on commit.
     val minMs = SettingsRepository.MIN_SILENCE_TIMEOUT_MS
     val maxMs = SettingsRepository.MAX_SILENCE_TIMEOUT_MS
     val stepMs = SettingsRepository.SILENCE_TIMEOUT_STEP_MS
-    val steps = ((maxMs - minMs) / stepMs).toInt() - 1  // exclusive of endpoints
+    val steps = ((maxMs - minMs) / stepMs).toInt() - 1
     val seconds = silenceTimeoutMs / 1000f
 
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                text = "Voice",
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Text(
-                text = "How long the assistant overlay waits in silence before it stops listening and processes what you said.",
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Text(
-                text = "Auto-stop after %.1f s".format(seconds),
-                style = MaterialTheme.typography.bodyLarge,
-            )
-            Slider(
-                value = seconds,
-                onValueChange = { v ->
-                    val ms = (Math.round(v * 1000f / stepMs) * stepMs).toLong()
-                        .coerceIn(minMs, maxMs)
-                    onChange(ms)
-                },
-                valueRange = (minMs / 1000f)..(maxMs / 1000f),
-                steps = steps,
-            )
-        }
+    SettingsCard(
+        icon = Icons.Default.Mic,
+        title = "Voice",
+        description = "How long the assistant overlay waits in silence before it stops listening and processes what you said.",
+    ) {
+        Text(
+            text = "Auto-stop after %.1f s".format(seconds),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Slider(
+            value = seconds,
+            onValueChange = { v ->
+                val ms = (Math.round(v * 1000f / stepMs) * stepMs).toLong()
+                    .coerceIn(minMs, maxMs)
+                onChange(ms)
+            },
+            valueRange = (minMs / 1000f)..(maxMs / 1000f),
+            steps = steps,
+        )
     }
 }
 
@@ -242,133 +376,109 @@ private fun NotificationsCard(
         state is PushUi.AwaitingEndpoint ||
         state is PushUi.Failed
 
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+    SettingsCard(
+        icon = Icons.Default.Notifications,
+        title = stringResource(R.string.push_card_title),
+        description = stringResource(R.string.push_card_body),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.md),
         ) {
-            Text(
-                text = stringResource(R.string.push_card_title),
-                style = MaterialTheme.typography.titleMedium,
+            Switch(
+                checked = checked,
+                enabled = toggleEnabled,
+                onCheckedChange = { wantOn ->
+                    when {
+                        !wantOn -> onToggle(false)
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                            ContextCompat.checkSelfPermission(
+                                ctx, Manifest.permission.POST_NOTIFICATIONS,
+                            ) != PackageManager.PERMISSION_GRANTED ->
+                                notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        else -> onToggle(true)
+                    }
+                },
             )
             Text(
-                text = stringResource(R.string.push_card_body),
-                style = MaterialTheme.typography.bodySmall,
+                text = "Enable notifications",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f),
             )
+        }
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Switch(
-                    checked = checked,
-                    enabled = toggleEnabled,
-                    onCheckedChange = { wantOn ->
-                        when {
-                            !wantOn -> onToggle(false)
-                            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                                ContextCompat.checkSelfPermission(
-                                    ctx, Manifest.permission.POST_NOTIFICATIONS,
-                                ) != PackageManager.PERMISSION_GRANTED ->
-                                    notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            else -> onToggle(true)
-                        }
-                    },
-                )
-                Text(
-                    text = "Enable notifications",
-                    modifier = Modifier.weight(1f),
-                )
-            }
-
-            when (state) {
+        AnimatedSwap(
+            targetState = state,
+            contentKey = { it::class },
+            label = "push-status",
+        ) { s ->
+            when (s) {
                 PushUi.Disabled -> Text(
-                    text = "Status: off",
+                    text = "Off",
                     style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                PushUi.NoDistributor -> Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        text = "Status: no distributor app installed",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(onClick = {
+                PushUi.NoDistributor -> Banner(
+                    severity = BannerSeverity.Warning,
+                    text = "No distributor app installed.",
+                    actionLabel = "Install ntfy",
+                    onAction = {
                         ctx.startActivity(
                             Intent(
                                 Intent.ACTION_VIEW,
                                 Uri.parse("https://f-droid.org/en/packages/io.heckel.ntfy/"),
                             ),
                         )
-                    }) {
-                        Text("Install ntfy")
-                    }
-                }
-                is PushUi.AwaitingEndpoint -> Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp))
-                    Text(
-                        text = "Status: contacting distributor…",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                is PushUi.Ready -> Text(
-                    text = "Status: ready · ${distributorLabel(state.distributorPkg)} / ${maskEndpoint(state.endpoint)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
+                    },
                 )
-                is PushUi.Failed -> Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        text = "Status: registration failed — ${state.reason}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(onClick = onRetry) {
-                        Text("Retry")
-                    }
-                }
+                is PushUi.AwaitingEndpoint -> Banner(
+                    severity = BannerSeverity.Progress,
+                    text = "Contacting distributor…",
+                )
+                is PushUi.Ready -> Banner(
+                    severity = BannerSeverity.Info,
+                    text = "Ready · ${distributorLabel(s.distributorPkg)} / ${maskEndpoint(s.endpoint)}",
+                )
+                is PushUi.Failed -> Banner(
+                    severity = BannerSeverity.Error,
+                    text = "Registration failed — ${s.reason}",
+                    actionLabel = "Retry",
+                    onAction = onRetry,
+                )
             }
+        }
 
-            TextButton(
-                onClick = { helpExpanded = !helpExpanded },
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
-            ) {
+        TextButton(
+            onClick = { helpExpanded = !helpExpanded },
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.push_setup_help_title) +
+                    if (helpExpanded) "  ▴" else "  ▾",
+            )
+        }
+        if (helpExpanded) {
+            Column(verticalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.xs)) {
                 Text(
-                    text = stringResource(R.string.push_setup_help_title) +
-                        if (helpExpanded) "  ▴" else "  ▾",
+                    text = stringResource(R.string.push_setup_help_step_1),
+                    style = MaterialTheme.typography.bodySmall,
                 )
-            }
-            if (helpExpanded) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = stringResource(R.string.push_setup_help_step_1),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Text(
-                        text = stringResource(R.string.push_setup_help_step_2),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Text(
-                        text = stringResource(R.string.push_setup_help_step_3),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Text(
-                        text = stringResource(R.string.push_setup_help_step_4),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Text(
-                        text = stringResource(R.string.push_setup_help_step_5),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
+                Text(
+                    text = stringResource(R.string.push_setup_help_step_2),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    text = stringResource(R.string.push_setup_help_step_3),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    text = stringResource(R.string.push_setup_help_step_4),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    text = stringResource(R.string.push_setup_help_step_5),
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
         }
     }
@@ -383,39 +493,39 @@ private fun maskEndpoint(url: String): String {
 }
 
 @Composable
-private fun DefaultAssistantBanner(
+private fun DefaultAssistantCard(
     held: Boolean,
     onLaunchPicker: () -> Unit,
 ) {
-    val colors = if (held) {
-        CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        )
+    val (container, content) = if (held) {
+        MaterialTheme.colorScheme.secondaryContainer to
+            MaterialTheme.colorScheme.onSecondaryContainer
     } else {
-        CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-        )
+        MaterialTheme.colorScheme.tertiaryContainer to
+            MaterialTheme.colorScheme.onTertiaryContainer
     }
     Card(
-        colors = colors,
+        colors = CardDefaults.cardColors(
+            containerColor = container,
+            contentColor = content,
+        ),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(HavenTokens.Spacing.lg),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.md),
         ) {
-            Icon(
-                imageVector = if (held) Icons.Filled.CheckCircle else Icons.Filled.Warning,
-                contentDescription = null,
+            AccentDisc(
+                icon = if (held) Icons.Default.RecordVoiceOver else Icons.Default.GraphicEq,
+                discColor = content.copy(alpha = 0.16f),
+                iconColor = content,
             )
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+                verticalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.xs),
             ) {
                 Text(
                     text = if (held) {
