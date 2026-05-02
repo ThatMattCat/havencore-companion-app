@@ -15,6 +15,12 @@ AI smart-home assistant. The agent itself lives in the sibling repo at
   lockscreen, `Intent.ACTION_ASSIST`) via a `VoiceInteractionService`
 - Inbound push notifications via UnifiedPush + ntfy with deep-link
   tap-through into chat
+- Device-side actions: the agent emits `device_action` WS events
+  alongside its normal `tool_call` / `tool_result` pair when it calls a
+  device-targeted MCP tool, and the app fires the matching native
+  Intent (e.g. `set_alarm` → `AlarmClock.ACTION_SET_ALARM` against the
+  user's Clock app). Currently `set_alarm` is the only wired action;
+  the plumbing is reusable.
 
 `README.md` is the user-facing description; this file is for working in
 the codebase.
@@ -83,7 +89,10 @@ app/src/main/kotlin/ai/havencore/companion/
 ├── data/
 │   ├── ServerConfig.kt
 │   ├── ThemeMode.kt             # System / Light / Dark enum (DataStore-persisted)
-│   └── SettingsRepository.kt    # DataStore<Preferences>: baseUrl, deviceName, lastSessionId, autoSpeak, default_assistant_prompt_seen, push_*, silence_timeout_ms, dynamic_color, theme_mode
+│   ├── SettingsRepository.kt    # DataStore<Preferences>: baseUrl, deviceName, lastSessionId, autoSpeak, default_assistant_prompt_seen, push_*, silence_timeout_ms, dynamic_color, theme_mode
+│   └── DeviceAction.kt          # sealed DeviceAction (SetAlarm, ...) + DeviceActionResult; fromEvent maps ChatEvent.DeviceAction wire payload to typed action
+├── device/
+│   └── DeviceActionDispatcher.kt # fires native Intents for parsed DeviceActions (e.g. AlarmClock.ACTION_SET_ALARM with FLAG_ACTIVITY_NEW_TASK + EXTRA_SKIP_UI)
 ├── audio/
 │   ├── MicRecorder.kt           # AAC-in-MP4 capture with peak-amplitude polling for hasSpeech() gate; exposes currentAmplitude for live endpointing
 │   └── TtsPlayer.kt             # Media3 ExoPlayer wrapper for TTS playback
@@ -119,10 +128,10 @@ app/src/main/kotlin/ai/havencore/companion/
     ├── history/{HistoryScreen.kt, HistoryViewModel.kt}
     ├── chat/
     │   ├── ChatScreen.kt
-    │   ├── ChatViewModel.kt    # exposes micAmplitude flow for input-bar halo
-    │   ├── ChatUiState.kt
+    │   ├── ChatViewModel.kt    # exposes micAmplitude flow for input-bar halo; reduces ChatEvent.DeviceAction by dispatching the parsed action and appending a TurnEvent.DeviceActionItem
+    │   ├── ChatUiState.kt       # TurnEvent.DeviceActionItem alongside ToolPair / Reasoning
     │   ├── ResumeMapper.kt      # OpenAI messages -> Turn list
-    │   └── components/{UserBubble, AssistantTurnCard, ToolCallCard (ToolCallRow), ReasoningCard (ReasoningRow), MetricChips, SummaryResetDivider, AutoSpeakToggle, MicButton}.kt
+    │   └── components/{UserBubble, AssistantTurnCard, ToolCallCard (ToolCallRow), ReasoningCard (ReasoningRow), DeviceActionCard (DeviceActionRow), MetricChips, SummaryResetDivider, AutoSpeakToggle, MicButton}.kt
     ├── components/             # canonical recipes — see docs/design-system.md
     │   ├── HeroDisc.kt          # 120 dp hero + AccentDisc (32 dp inline leading icon)
     │   ├── StatusPill.kt
@@ -150,6 +159,17 @@ Currently consumed:
   agent stores a `(device_id, device_label, endpoint)` row per
   registered device; its `NtfyNotifier` later POSTs payloads directly
   to each row's `endpoint`
+
+The agent also emits `device_action` events on `/ws/chat` whose
+companion-side handling lives in `data/DeviceAction.kt` +
+`device/DeviceActionDispatcher.kt` + the `ChatViewModel` /
+`HavenAssistSession` reducers. The agent enumerates which tool names
+trigger a device-action event in a `DEVICE_ACTION_TOOLS` frozenset on
+its `orchestrator.py`; the wire envelope is documented in
+`docs/wire-protocol.md`. Adding a new action means: define the MCP
+tool agent-side, add it to `DEVICE_ACTION_TOOLS`, add a `sealed
+DeviceAction` variant + parser branch + dispatcher branch + a
+display-row arm in `DeviceActionCard.kt` here.
 
 The assist overlay opens its own `ChatWsSession` so the foreground
 chat WS is not knocked off, but binds to the same `lastSessionId` so

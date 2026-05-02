@@ -4,6 +4,7 @@ import ai.havencore.companion.HavenCoreApp
 import ai.havencore.companion.MainActivity
 import ai.havencore.companion.audio.MicRecorder
 import ai.havencore.companion.audio.TtsPlayer
+import ai.havencore.companion.data.DeviceAction
 import ai.havencore.companion.data.ServerConfig
 import ai.havencore.companion.net.ChatEvent
 import ai.havencore.companion.net.ChatWsSession
@@ -316,6 +317,17 @@ class HavenAssistSession(context: Context) : VoiceInteractionSession(context) {
                     sessionScope.launch {
                         delay(2_500)
                         finish()
+                    }
+                }
+                is ChatEvent.DeviceAction -> {
+                    val parsed = DeviceAction.fromEvent(ev)
+                    if (parsed != null) {
+                        sessionScope.launch(Dispatchers.IO) {
+                            app.deviceActionDispatcher.dispatch(parsed)
+                        }
+                        state.update { it.copy(actionCount = it.actionCount + 1) }
+                    } else {
+                        Log.w(TAG, "device_action with unsupported action=${ev.action}")
                     }
                 }
                 is ChatEvent.Thinking,

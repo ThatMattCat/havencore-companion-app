@@ -2,7 +2,10 @@ package ai.havencore.companion.ui.chat
 
 import ai.havencore.companion.audio.MicRecorder
 import ai.havencore.companion.audio.TtsPlayer
+import ai.havencore.companion.data.DeviceAction
+import ai.havencore.companion.data.DeviceActionResult
 import ai.havencore.companion.data.SettingsRepository
+import ai.havencore.companion.device.DeviceActionDispatcher
 import ai.havencore.companion.net.ChatApi
 import ai.havencore.companion.net.ChatEvent
 import ai.havencore.companion.net.ChatWsSession
@@ -12,6 +15,7 @@ import ai.havencore.companion.net.TtsApi
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,6 +24,7 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 
 class ChatViewModel(
@@ -30,6 +35,7 @@ class ChatViewModel(
     private val ttsApi: TtsApi,
     private val mic: MicRecorder,
     private val ttsPlayer: TtsPlayer,
+    private val deviceActionDispatcher: DeviceActionDispatcher,
     private val sessionToResume: String?,
 ) : ViewModel() {
 
@@ -337,6 +343,30 @@ class ChatViewModel(
 
             is ChatEvent.SummaryReset -> _state.update { s ->
                 s.copy(turns = s.turns + TurnItem.SummaryResetMarker(nextKey(), event.reason, event.summary))
+            }
+
+            is ChatEvent.DeviceAction -> handleDeviceAction(event)
+        }
+    }
+
+    private fun handleDeviceAction(event: ChatEvent.DeviceAction) {
+        val parsed = DeviceAction.fromEvent(event)
+        viewModelScope.launch {
+            val outcome = if (parsed == null) {
+                DeviceActionResult.Unsupported
+            } else {
+                withContext(Dispatchers.IO) { deviceActionDispatcher.dispatch(parsed) }
+            }
+            _state.update { s ->
+                s.copy(turns = s.turns.updateLastAssistantTurn { at ->
+                    at.copy(
+                        events = at.events + TurnEvent.DeviceActionItem(
+                            action = event.action,
+                            parsed = parsed,
+                            result = outcome,
+                        ),
+                    )
+                })
             }
         }
     }

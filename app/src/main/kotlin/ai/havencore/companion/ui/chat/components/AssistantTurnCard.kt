@@ -44,6 +44,7 @@ fun AssistantTurnCard(turn: TurnItem.AssistantTurn, modifier: Modifier = Modifie
                 when (event) {
                     is TurnEvent.ToolPair -> ToolCallRow(event)
                     is TurnEvent.Reasoning -> ReasoningRow(event)
+                    is TurnEvent.DeviceActionItem -> DeviceActionRow(event)
                 }
             }
             turn.finalText?.takeIf { it.isNotBlank() }?.let { text ->

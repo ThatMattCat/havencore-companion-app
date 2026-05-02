@@ -221,6 +221,18 @@ private fun PhaseBody(
                             colors = AssistChipDefaults.assistChipColors(),
                         )
                     }
+                    if (state.actionCount > 0) {
+                        AssistChip(
+                            onClick = {},
+                            label = {
+                                Text(
+                                    if (state.actionCount == 1) "1 action"
+                                    else "${state.actionCount} actions",
+                                )
+                            },
+                            colors = AssistChipDefaults.assistChipColors(),
+                        )
+                    }
                 }
 
                 Phase.Replying -> {

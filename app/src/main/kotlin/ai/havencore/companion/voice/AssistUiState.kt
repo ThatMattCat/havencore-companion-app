@@ -10,6 +10,7 @@ data class AssistUiState(
     val transcript: String = "",
     val reply: String = "",
     val toolCount: Int = 0,
+    val actionCount: Int = 0,
     val errorMessage: String? = null,
 )
 

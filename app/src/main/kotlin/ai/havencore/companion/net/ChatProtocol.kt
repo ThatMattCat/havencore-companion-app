@@ -115,6 +115,20 @@ sealed class ChatEvent {
         val reason: String,
         val summary: String = "",
     ) : ChatEvent()
+
+    // Agent asks the device to perform a native action (e.g. set an alarm).
+    // Travels alongside the normal tool_call/tool_result pair: those are the
+    // server-side breadcrumb; this is the user-side fire-the-intent signal.
+    // `args` schema is per-action; unknown action names degrade to an inert
+    // card via DeviceAction.fromEvent returning null.
+    @Serializable
+    @SerialName("device_action")
+    data class DeviceAction(
+        val action: String,
+        val args: JsonObject = JsonObject(emptyMap()),
+        val id: String? = null,
+        val device_id: String? = null,
+    ) : ChatEvent()
 }
 
 @Serializable
@@ -141,6 +155,7 @@ private val knownEventTypes: Set<String> = setOf(
     "done",
     "error",
     "summary_reset",
+    "device_action",
 )
 
 fun parseChatFrame(raw: String): ParsedFrame {
