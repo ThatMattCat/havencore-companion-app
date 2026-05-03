@@ -82,6 +82,7 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
     val cameraTakePhotoEnabled by vm.companionCameraTakePhotoEnabled.collectAsState()
     val cameraIdentifyEnabled by vm.companionCameraIdentifyEnabled.collectAsState()
     val cameraReadTextEnabled by vm.companionCameraReadTextEnabled.collectAsState()
+    val cameraWhoIsInViewEnabled by vm.companionCameraWhoIsInViewEnabled.collectAsState()
 
     val ctx = LocalContext.current
 
@@ -154,6 +155,8 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                 onIdentifyEnabledChange = vm::setCompanionCameraIdentifyEnabled,
                 readTextEnabled = cameraReadTextEnabled,
                 onReadTextEnabledChange = vm::setCompanionCameraReadTextEnabled,
+                whoIsInViewEnabled = cameraWhoIsInViewEnabled,
+                onWhoIsInViewEnabledChange = vm::setCompanionCameraWhoIsInViewEnabled,
             )
 
             NotificationsCard(
@@ -379,6 +382,8 @@ private fun CompanionCameraCard(
     onIdentifyEnabledChange: (Boolean) -> Unit,
     readTextEnabled: Boolean,
     onReadTextEnabledChange: (Boolean) -> Unit,
+    whoIsInViewEnabled: Boolean,
+    onWhoIsInViewEnabledChange: (Boolean) -> Unit,
 ) {
     val ctx = LocalContext.current
     val cameraPermLauncher = rememberLauncherForActivityResult(
@@ -428,6 +433,14 @@ private fun CompanionCameraCard(
             checked = readTextEnabled,
             enabled = takePhotoEnabled,
             onCheckedChange = onReadTextEnabledChange,
+        )
+        CameraToolToggleRow(
+            label = "Recognize who's in the photo",
+            description = "Lets the assistant call who_is_in_view against " +
+                "your enrolled face gallery.",
+            checked = whoIsInViewEnabled,
+            enabled = takePhotoEnabled,
+            onCheckedChange = onWhoIsInViewEnabledChange,
         )
     }
 }

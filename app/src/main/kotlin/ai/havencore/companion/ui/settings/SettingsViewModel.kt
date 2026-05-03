@@ -106,6 +106,17 @@ class SettingsViewModel(
         viewModelScope.launch { repo.setCompanionCameraReadTextEnabled(enabled) }
     }
 
+    val companionCameraWhoIsInViewEnabled: StateFlow<Boolean> =
+        repo.companionCameraWhoIsInViewEnabledFlow.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = true,
+        )
+
+    fun setCompanionCameraWhoIsInViewEnabled(enabled: Boolean) {
+        viewModelScope.launch { repo.setCompanionCameraWhoIsInViewEnabled(enabled) }
+    }
+
     private val _ping = MutableStateFlow<PingState>(PingState.Untested)
     val ping: StateFlow<PingState> = _ping.asStateFlow()
 

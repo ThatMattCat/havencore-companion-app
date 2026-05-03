@@ -72,12 +72,23 @@ sealed interface DeviceAction {
         override val sourceId: String? = null,
     ) : CameraCapture
 
+    /**
+     * Capture a photo and let the agent run face recognition against the
+     * enrolled gallery. No client-side args; the agent forwards the JPEG
+     * to the face-recognition service after the upload lands.
+     */
+    data class WhoIsInView(
+        override val toolCallId: String,
+        override val sourceId: String? = null,
+    ) : CameraCapture
+
     companion object {
         fun fromEvent(event: ChatEvent.DeviceAction): DeviceAction? = when (event.action) {
             "set_alarm" -> parseSetAlarm(event.args, event.id)
             "take_photo" -> parseTakePhoto(event.args, event.id)
             "identify_object_in_photo" -> parseIdentifyObjectInPhoto(event.args, event.id)
             "read_text_from_image" -> parseReadTextFromImage(event.id)
+            "who_is_in_view" -> parseWhoIsInView(event.id)
             else -> null
         }
 
@@ -103,6 +114,11 @@ sealed interface DeviceAction {
         private fun parseReadTextFromImage(id: String?): ReadTextFromImage? {
             val toolCallId = id?.takeIf { it.isNotBlank() } ?: return null
             return ReadTextFromImage(toolCallId = toolCallId, sourceId = id)
+        }
+
+        private fun parseWhoIsInView(id: String?): WhoIsInView? {
+            val toolCallId = id?.takeIf { it.isNotBlank() } ?: return null
+            return WhoIsInView(toolCallId = toolCallId, sourceId = id)
         }
 
         private fun parseSetAlarm(args: JsonObject, id: String?): SetAlarm? {

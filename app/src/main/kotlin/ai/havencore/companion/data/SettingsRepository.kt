@@ -36,6 +36,8 @@ class SettingsRepository(context: Context) {
         booleanPreferencesKey("companion_camera_identify_enabled")
     private val keyCompanionCameraReadTextEnabled =
         booleanPreferencesKey("companion_camera_read_text_enabled")
+    private val keyCompanionCameraWhoIsInViewEnabled =
+        booleanPreferencesKey("companion_camera_who_is_in_view_enabled")
 
     val configFlow: Flow<ServerConfig> = store.data.map { prefs ->
         ServerConfig(
@@ -168,6 +170,13 @@ class SettingsRepository(context: Context) {
 
     suspend fun setCompanionCameraReadTextEnabled(enabled: Boolean) {
         store.edit { prefs -> prefs[keyCompanionCameraReadTextEnabled] = enabled }
+    }
+
+    val companionCameraWhoIsInViewEnabledFlow: Flow<Boolean> =
+        store.data.map { prefs -> prefs[keyCompanionCameraWhoIsInViewEnabled] ?: true }
+
+    suspend fun setCompanionCameraWhoIsInViewEnabled(enabled: Boolean) {
+        store.edit { prefs -> prefs[keyCompanionCameraWhoIsInViewEnabled] = enabled }
     }
 
     companion object {

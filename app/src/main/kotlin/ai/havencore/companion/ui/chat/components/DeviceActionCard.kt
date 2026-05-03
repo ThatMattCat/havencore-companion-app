@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -114,6 +115,7 @@ private fun displayFor(item: TurnEvent.DeviceActionItem): RowDisplay {
         parsed is DeviceAction.CameraCapture && isFailure -> Icons.Default.ErrorOutline
         parsed is DeviceAction.IdentifyObjectInPhoto -> Icons.Default.Search
         parsed is DeviceAction.ReadTextFromImage -> Icons.AutoMirrored.Filled.MenuBook
+        parsed is DeviceAction.WhoIsInView -> Icons.Default.Face
         parsed is DeviceAction.CameraCapture -> Icons.Default.CameraAlt
         isFailure && parsed !is DeviceAction.SetAlarm -> Icons.Default.ErrorOutline
         parsed is DeviceAction.SetAlarm -> Icons.Default.Alarm
@@ -136,12 +138,14 @@ private fun cameraCaptureTitle(
         is DeviceAction.TakePhoto -> "photo"
         is DeviceAction.IdentifyObjectInPhoto -> "identification"
         is DeviceAction.ReadTextFromImage -> "text capture"
+        is DeviceAction.WhoIsInView -> "face recognition"
     }
     return when (result) {
         is DeviceActionResult.Uploaded -> when (parsed) {
             is DeviceAction.TakePhoto -> "Photo sent"
             is DeviceAction.IdentifyObjectInPhoto -> "Sent for identification"
             is DeviceAction.ReadTextFromImage -> "Sent for text reading"
+            is DeviceAction.WhoIsInView -> "Sent for face recognition"
         }
         is DeviceActionResult.Cancelled -> "Cancelled $verb"
         is DeviceActionResult.Disabled -> "${verb.replaceFirstChar { it.titlecase() }} is off"
@@ -151,6 +155,7 @@ private fun cameraCaptureTitle(
             is DeviceAction.TakePhoto -> "Capturing photo…"
             is DeviceAction.IdentifyObjectInPhoto -> "Capturing for identification…"
             is DeviceAction.ReadTextFromImage -> "Capturing for text reading…"
+            is DeviceAction.WhoIsInView -> "Capturing for face recognition…"
         }
     }
 }

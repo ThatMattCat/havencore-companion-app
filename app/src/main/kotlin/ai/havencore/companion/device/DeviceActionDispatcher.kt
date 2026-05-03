@@ -80,6 +80,8 @@ class DeviceActionDispatcher(
                 settings.companionCameraIdentifyEnabledFlow.first()
             is DeviceAction.ReadTextFromImage ->
                 settings.companionCameraReadTextEnabledFlow.first()
+            is DeviceAction.WhoIsInView ->
+                settings.companionCameraWhoIsInViewEnabledFlow.first()
         }
         if (!perToolEnabled) {
             Log.i(TAG, "$label skipped: per-tool toggle disabled")
