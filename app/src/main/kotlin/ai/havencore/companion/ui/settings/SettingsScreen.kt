@@ -28,6 +28,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Mic
@@ -78,6 +79,10 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
     val silenceTimeoutMs by vm.silenceTimeoutMs.collectAsState()
     val dynamicColor by vm.dynamicColor.collectAsState()
     val themeMode by vm.themeMode.collectAsState()
+    val cameraTakePhotoEnabled by vm.companionCameraTakePhotoEnabled.collectAsState()
+    val cameraIdentifyEnabled by vm.companionCameraIdentifyEnabled.collectAsState()
+    val cameraReadTextEnabled by vm.companionCameraReadTextEnabled.collectAsState()
+    val cameraWhoIsInViewEnabled by vm.companionCameraWhoIsInViewEnabled.collectAsState()
 
     val ctx = LocalContext.current
 
@@ -141,6 +146,17 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
             VoiceCard(
                 silenceTimeoutMs = silenceTimeoutMs,
                 onChange = vm::setSilenceTimeoutMs,
+            )
+
+            CompanionCameraCard(
+                takePhotoEnabled = cameraTakePhotoEnabled,
+                onTakePhotoEnabledChange = vm::setCompanionCameraTakePhotoEnabled,
+                identifyEnabled = cameraIdentifyEnabled,
+                onIdentifyEnabledChange = vm::setCompanionCameraIdentifyEnabled,
+                readTextEnabled = cameraReadTextEnabled,
+                onReadTextEnabledChange = vm::setCompanionCameraReadTextEnabled,
+                whoIsInViewEnabled = cameraWhoIsInViewEnabled,
+                onWhoIsInViewEnabledChange = vm::setCompanionCameraWhoIsInViewEnabled,
             )
 
             NotificationsCard(
@@ -355,6 +371,113 @@ private fun VoiceCard(
             valueRange = (minMs / 1000f)..(maxMs / 1000f),
             steps = steps,
         )
+    }
+}
+
+@Composable
+private fun CompanionCameraCard(
+    takePhotoEnabled: Boolean,
+    onTakePhotoEnabledChange: (Boolean) -> Unit,
+    identifyEnabled: Boolean,
+    onIdentifyEnabledChange: (Boolean) -> Unit,
+    readTextEnabled: Boolean,
+    onReadTextEnabledChange: (Boolean) -> Unit,
+    whoIsInViewEnabled: Boolean,
+    onWhoIsInViewEnabledChange: (Boolean) -> Unit,
+) {
+    val ctx = LocalContext.current
+    val cameraPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted -> if (granted) onTakePhotoEnabledChange(true) }
+
+    SettingsCard(
+        icon = Icons.Default.CameraAlt,
+        title = "Camera tools",
+        description = "Let the assistant ask your phone to take a photo and " +
+            "send it back. Camera launches only when the agent calls a " +
+            "matching tool — never on its own.",
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.md),
+        ) {
+            Switch(
+                checked = takePhotoEnabled,
+                onCheckedChange = { wantOn ->
+                    when {
+                        !wantOn -> onTakePhotoEnabledChange(false)
+                        ContextCompat.checkSelfPermission(
+                            ctx, Manifest.permission.CAMERA,
+                        ) != PackageManager.PERMISSION_GRANTED ->
+                            cameraPermLauncher.launch(Manifest.permission.CAMERA)
+                        else -> onTakePhotoEnabledChange(true)
+                    }
+                },
+            )
+            Text(
+                text = "Camera tools (master)",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        CameraToolToggleRow(
+            label = "Identify what's in the photo",
+            description = "Lets the assistant call identify_object_in_photo.",
+            checked = identifyEnabled,
+            enabled = takePhotoEnabled,
+            onCheckedChange = onIdentifyEnabledChange,
+        )
+        CameraToolToggleRow(
+            label = "Read text from the photo",
+            description = "Lets the assistant call read_text_from_image (OCR).",
+            checked = readTextEnabled,
+            enabled = takePhotoEnabled,
+            onCheckedChange = onReadTextEnabledChange,
+        )
+        CameraToolToggleRow(
+            label = "Recognize who's in the photo",
+            description = "Lets the assistant call who_is_in_view against " +
+                "your enrolled face gallery.",
+            checked = whoIsInViewEnabled,
+            enabled = takePhotoEnabled,
+            onCheckedChange = onWhoIsInViewEnabledChange,
+        )
+    }
+}
+
+@Composable
+private fun CameraToolToggleRow(
+    label: String,
+    description: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.md),
+    ) {
+        Switch(
+            checked = checked && enabled,
+            enabled = enabled,
+            onCheckedChange = onCheckedChange,
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (enabled) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

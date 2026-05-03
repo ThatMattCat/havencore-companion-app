@@ -30,6 +30,14 @@ class SettingsRepository(context: Context) {
     private val keySilenceTimeoutMs = longPreferencesKey("silence_timeout_ms")
     private val keyDynamicColor = booleanPreferencesKey("dynamic_color")
     private val keyThemeMode = stringPreferencesKey("theme_mode")
+    private val keyCompanionCameraTakePhotoEnabled =
+        booleanPreferencesKey("companion_camera_take_photo_enabled")
+    private val keyCompanionCameraIdentifyEnabled =
+        booleanPreferencesKey("companion_camera_identify_enabled")
+    private val keyCompanionCameraReadTextEnabled =
+        booleanPreferencesKey("companion_camera_read_text_enabled")
+    private val keyCompanionCameraWhoIsInViewEnabled =
+        booleanPreferencesKey("companion_camera_who_is_in_view_enabled")
 
     val configFlow: Flow<ServerConfig> = store.data.map { prefs ->
         ServerConfig(
@@ -133,6 +141,42 @@ class SettingsRepository(context: Context) {
     suspend fun setSilenceTimeoutMs(ms: Long) {
         val clamped = ms.coerceIn(MIN_SILENCE_TIMEOUT_MS, MAX_SILENCE_TIMEOUT_MS)
         store.edit { prefs -> prefs[keySilenceTimeoutMs] = clamped }
+    }
+
+    // Companion-app camera tools.
+    //
+    // The take_photo flow is the master gate (no separate toggle for it on the
+    // Settings card — its switch IS the master). Vision-chained tools each
+    // have their own switch underneath; they require the master to be on,
+    // and additionally honor their own toggle for fine-grained control
+    // (e.g. user wants take_photo but not OCR). All default ON so a fresh
+    // install gets every camera capability after granting CAMERA.
+    val companionCameraTakePhotoEnabledFlow: Flow<Boolean> =
+        store.data.map { prefs -> prefs[keyCompanionCameraTakePhotoEnabled] ?: true }
+
+    suspend fun setCompanionCameraTakePhotoEnabled(enabled: Boolean) {
+        store.edit { prefs -> prefs[keyCompanionCameraTakePhotoEnabled] = enabled }
+    }
+
+    val companionCameraIdentifyEnabledFlow: Flow<Boolean> =
+        store.data.map { prefs -> prefs[keyCompanionCameraIdentifyEnabled] ?: true }
+
+    suspend fun setCompanionCameraIdentifyEnabled(enabled: Boolean) {
+        store.edit { prefs -> prefs[keyCompanionCameraIdentifyEnabled] = enabled }
+    }
+
+    val companionCameraReadTextEnabledFlow: Flow<Boolean> =
+        store.data.map { prefs -> prefs[keyCompanionCameraReadTextEnabled] ?: true }
+
+    suspend fun setCompanionCameraReadTextEnabled(enabled: Boolean) {
+        store.edit { prefs -> prefs[keyCompanionCameraReadTextEnabled] = enabled }
+    }
+
+    val companionCameraWhoIsInViewEnabledFlow: Flow<Boolean> =
+        store.data.map { prefs -> prefs[keyCompanionCameraWhoIsInViewEnabled] ?: true }
+
+    suspend fun setCompanionCameraWhoIsInViewEnabled(enabled: Boolean) {
+        store.edit { prefs -> prefs[keyCompanionCameraWhoIsInViewEnabled] = enabled }
     }
 
     companion object {
