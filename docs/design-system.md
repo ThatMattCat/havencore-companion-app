@@ -253,7 +253,8 @@ AnimatedContent(
 ) { state -> ... }
 ```
 
-Promoted into `ui/motion/AnimatedSwap.kt` once a second site needs it.
+Packaged as `ui/components/AnimatedSwap.kt`; reach for it instead of
+inlining the recipe.
 
 **Container size change** (sheet growing as content swaps):
 
@@ -360,10 +361,9 @@ no pre-commit greps — solo project, AI-assistant workflow.
    Claude session reads CLAUDE.md, so the rules propagate.
 2. **The pre-merge checklist below** — 30 seconds to walk before
    committing UI changes.
-3. **Optional CI safety net** (deferred until token migration is
-   complete): bump `lint.xml` severity for built-in `HardcodedText`
-   and add a project rule for `Color(0x...)` literals outside
-   `ui/theme/`.
+3. **Optional CI safety net** (not yet wired): bump `lint.xml`
+   severity for built-in `HardcodedText` and add a project rule for
+   `Color(0x...)` literals outside `ui/theme/`.
 
 The win condition is **"the next 50 UI changes feel like the assist
 overlay,"** not "no `dp` literal ever appears outside the theme
@@ -405,18 +405,9 @@ on every device, every time. Trade variety for identity.
   expose a Settings toggle, but if a user opts in, the Quiet Tech
   palette is invisible — the `BrandSeed` is the fallback only. Anchor
   identity with the four brand glyphs above when this matters.
-- **Scrim was hardcoded** in `voice/AssistOverlay.kt` as
-  `Color.Black.copy(alpha = 0.4f)`. The replacement is
-  `MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f)` — adapts to
-  light theme, matches M3's standard sheet scrim alpha.
 - **`SummaryResetDivider`** builds its label by `.replace('_', ' ')`
   on the server-emitted reason. Replace with a typed sealed-class
   label or `stringResource`.
-- **Edge-to-edge inconsistency**: the assist overlay's full-screen
-  scrim assumes edge-to-edge, but the rest of the app doesn't call
-  `enableEdgeToEdge()`. Either commit (call `enableEdgeToEdge` in
-  `MainActivity` and audit insets on every screen) or document the
-  asymmetry as intentional.
 - **Compose BOM bumps can rename M3 roles**. Pinned at
   `2024.12.01`. If you bump it, re-verify `ColorScheme` and `Shapes`
   role names — M3 has occasionally renamed between minor versions.

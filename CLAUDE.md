@@ -17,10 +17,12 @@ AI smart-home assistant. The agent itself lives in the sibling repo at
   tap-through into chat
 - Device-side actions: the agent emits `device_action` WS events
   alongside its normal `tool_call` / `tool_result` pair when it calls a
-  device-targeted MCP tool, and the app fires the matching native
-  Intent (e.g. `set_alarm` → `AlarmClock.ACTION_SET_ALARM` against the
-  user's Clock app). Currently `set_alarm` is the only wired action;
-  the plumbing is reusable.
+  device-targeted MCP tool. Wired actions cover an alarm intent
+  (`set_alarm` → `AlarmClock.ACTION_SET_ALARM` against the user's Clock
+  app) and a camera-capture+upload primitive shared by four MCP tools
+  (`take_photo`, `identify_object_in_photo`, `read_text_from_image`,
+  `who_is_in_view`) that bounce a JPEG back to the agent via
+  `POST /api/companion/upload` so the LLM can see the image.
 
 `README.md` is the user-facing description; this file is for working in
 the codebase.
@@ -89,10 +91,11 @@ app/src/main/kotlin/ai/havencore/companion/
 ├── data/
 │   ├── ServerConfig.kt
 │   ├── ThemeMode.kt             # System / Light / Dark enum (DataStore-persisted)
-│   ├── SettingsRepository.kt    # DataStore<Preferences>: baseUrl, deviceName, lastSessionId, autoSpeak, default_assistant_prompt_seen, push_*, silence_timeout_ms, dynamic_color, theme_mode
-│   └── DeviceAction.kt          # sealed DeviceAction (SetAlarm, ...) + DeviceActionResult; fromEvent maps ChatEvent.DeviceAction wire payload to typed action
+│   ├── SettingsRepository.kt    # DataStore<Preferences>: baseUrl, deviceName, lastSessionId, autoSpeak, default_assistant_prompt_seen, push_*, silence_timeout_ms, dynamic_color, theme_mode, companion_camera_take_photo_enabled, companion_camera_identify_enabled, companion_camera_read_text_enabled, companion_camera_who_is_in_view_enabled
+│   └── DeviceAction.kt          # sealed DeviceAction with five variants (SetAlarm + TakePhoto / IdentifyObjectInPhoto / ReadTextFromImage / WhoIsInView sharing a CameraCapture sub-interface keyed by toolCallId) + DeviceActionResult; fromEvent maps ChatEvent.DeviceAction wire payload to typed action
 ├── device/
-│   └── DeviceActionDispatcher.kt # fires native Intents for parsed DeviceActions (e.g. AlarmClock.ACTION_SET_ALARM with FLAG_ACTIVITY_NEW_TASK + EXTRA_SKIP_UI)
+│   ├── DeviceActionDispatcher.kt # dispatches both fire-and-forget intents (e.g. AlarmClock.ACTION_SET_ALARM with FLAG_ACTIVITY_NEW_TASK + EXTRA_SKIP_UI) and the camera capture+upload round-trip; checks Settings toggles before launching CaptureActivity / posting to CompanionUploadApi
+│   └── CaptureActivity.kt        # transparent ComponentActivity that fires the system camera intent, writes the JPEG into cacheDir/photos via FileProvider, and delivers the file to a per-tool_call_id callback registered by the dispatcher
 ├── audio/
 │   ├── MicRecorder.kt           # AAC-in-MP4 capture with peak-amplitude polling for hasSpeech() gate; exposes currentAmplitude for live endpointing
 │   └── TtsPlayer.kt             # Media3 ExoPlayer wrapper for TTS playback
@@ -104,6 +107,7 @@ app/src/main/kotlin/ai/havencore/companion/
 │   ├── ChatWsSession.kt         # WS supervisor with reconnect ladder
 │   ├── SttApi.kt                # POST /api/stt/transcribe multipart upload
 │   ├── TtsApi.kt                # POST /api/tts/speak
+│   ├── CompanionUploadApi.kt    # POST /api/companion/upload multipart (tool_call_id + device_id + JPEG); used by camera tools to round-trip a photo back to the agent
 │   └── PushApi.kt               # POST/DELETE /api/push/register
 ├── push/                        # UnifiedPush + ntfy
 │   ├── PushChannel.kt                  # havencore_autonomy notification channel
@@ -131,7 +135,16 @@ app/src/main/kotlin/ai/havencore/companion/
     │   ├── ChatViewModel.kt    # exposes micAmplitude flow for input-bar halo; reduces ChatEvent.DeviceAction by dispatching the parsed action and appending a TurnEvent.DeviceActionItem
     │   ├── ChatUiState.kt       # TurnEvent.DeviceActionItem alongside ToolPair / Reasoning
     │   ├── ResumeMapper.kt      # OpenAI messages -> Turn list
-    │   └── components/{UserBubble, AssistantTurnCard, ToolCallCard (ToolCallRow), ReasoningCard (ReasoningRow), DeviceActionCard (DeviceActionRow), MetricChips, SummaryResetDivider, AutoSpeakToggle, MicButton}.kt
+    │   └── components/
+    │       ├── UserBubble.kt
+    │       ├── AssistantTurnCard.kt
+    │       ├── ToolCallCard.kt           # ToolCallRow
+    │       ├── ReasoningCard.kt          # ReasoningRow
+    │       ├── DeviceActionCard.kt       # DeviceActionRow — display arms per DeviceAction variant
+    │       ├── MetricChips.kt
+    │       ├── SummaryResetDivider.kt
+    │       ├── AutoSpeakToggle.kt
+    │       └── MicButton.kt
     ├── components/             # canonical recipes — see docs/design-system.md
     │   ├── HeroDisc.kt          # 120 dp hero + AccentDisc (32 dp inline leading icon)
     │   ├── StatusPill.kt
@@ -166,10 +179,27 @@ companion-side handling lives in `data/DeviceAction.kt` +
 `HavenAssistSession` reducers. The agent enumerates which tool names
 trigger a device-action event in a `DEVICE_ACTION_TOOLS` frozenset on
 its `orchestrator.py`; the wire envelope is documented in
-`docs/wire-protocol.md`. Adding a new action means: define the MCP
-tool agent-side, add it to `DEVICE_ACTION_TOOLS`, add a `sealed
-DeviceAction` variant + parser branch + dispatcher branch + a
-display-row arm in `DeviceActionCard.kt` here.
+`docs/wire-protocol.md`.
+
+The five wired actions split into two shapes. `set_alarm` is a
+fire-and-forget Intent (`AlarmClock.ACTION_SET_ALARM`). The four camera
+tools (`take_photo`, `identify_object_in_photo`, `read_text_from_image`,
+`who_is_in_view`) all share one capture-and-upload primitive: the
+dispatcher launches `device/CaptureActivity.kt`, awaits the JPEG via a
+per-`tool_call_id` callback, then `net/CompanionUploadApi.upload` POSTs
+the bytes to `/api/companion/upload` so the agent can resolve the
+matching tool-call future and feed the resulting `image_url` back to
+the LLM. Each camera tool is gated by its own `companion_camera_*_enabled`
+Settings toggle (`take_photo` is the master gate; the other three
+require master + their own switch). `DeviceActionResult` carries
+camera-only states beyond `Fired` / `Failed` / `NoHandler` /
+`Unsupported`: `InProgress`, `Uploading`, `Uploaded`, `Disabled`
+(toggle off), and `Cancelled` (user backed out of the camera).
+
+Adding a new action means: define the MCP tool agent-side, add it to
+`DEVICE_ACTION_TOOLS`, add a `sealed DeviceAction` variant + parser
+branch + dispatcher branch + a display-row arm in `DeviceActionCard.kt`
+here.
 
 The assist overlay opens its own `ChatWsSession` so the foreground
 chat WS is not knocked off, but binds to the same `lastSessionId` so
@@ -228,16 +258,16 @@ Hard rules for new UI:
 - Walk the pre-merge UI checklist at the bottom of
   `docs/design-system.md` before committing UI changes.
 
-The token migration is staged. The foundation is in place:
-`ui/theme/Tokens.kt`, `ui/theme/Shapes.kt`, the full
-`HavenLightColors` / `HavenDarkColors` schemes in `Color.kt`, and the
-wired `HavenCoreTheme` (color + shapes + typography). What's left is
-migrating screens one at a time (Settings → History → Chat →
-AssistOverlay) to consume these instead of literal `dp` / `Color(0x...)`
-/ `RoundedCornerShape(N.dp)`. While migration is in flight, prefer
-reading from `MaterialTheme` and `HavenTokens` over duplicating
-literals — even in screens that haven't been migrated yet, new code
-should follow the rules.
+Tokens live in `ui/theme/`: `Tokens.kt` (spacing, motion, elevation,
+hero sizes), `Shapes.kt`, and `Color.kt` (the full
+`HavenLightColors` / `HavenDarkColors` schemes plus the wired
+`HavenCoreTheme` for color + shapes + typography). Screens consume
+them via `MaterialTheme` (color, shapes, typography) and `HavenTokens`
+(spacing, motion, elevation, hero sizes). Hardcoded `dp` literals
+belong only inside `ui/theme/` or as one-off pixel-precise constants
+with a justifying comment; `Color(0x...)` belongs only in
+`ui/theme/Color.kt`. The pre-merge UI checklist in
+`docs/design-system.md` is the enforcement mechanism.
 
 ## Voice-friendly content
 

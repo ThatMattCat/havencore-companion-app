@@ -1,11 +1,12 @@
 # Wire protocol — the gotchas
 
-The HavenCore agent's WebSocket and REST surfaces are documented in the
-master plan and in agent source under
+The HavenCore agent's WebSocket and REST surfaces are defined in agent
+source under
 `/home/matt/code/havencore/services/agent/selene_agent/api/`. This file
 captures the small set of facts that are not obvious from skimming the
-agent's docstrings — the ones that bit (or would have bitten) the Phase 1
-implementation. Keep this short; the agent source is the source of truth.
+agent's docstrings — the ones that bit (or would have bitten) the
+initial implementation. Keep this short; the agent source is the source
+of truth.
 
 ## WS `/ws/chat`
 
@@ -29,10 +30,11 @@ inside the orchestrator code. Match the lowercase wire form on
 
 ### No `RESPONSE_CHUNK`
 
-The master plan listed `RESPONSE_CHUNK` as part of the event taxonomy.
-The agent does not emit it. The full assistant text arrives in a single
-`done.content` field. A "Thinking…" spinner covers the latency until
-`done` lands. Do not write a streaming text renderer expecting chunks.
+An earlier draft of the protocol listed `RESPONSE_CHUNK` as part of the
+event taxonomy. The agent does not emit it. The full assistant text
+arrives in a single `done.content` field. A "Thinking…" spinner covers
+the latency until `done` lands. Do not write a streaming text renderer
+expecting chunks.
 
 ### `session_id` is honored only on the first frame
 
@@ -56,13 +58,13 @@ Plain envelope, no type field. The agent's main path treats anything
 without `"type":"session"` as a user message (`chat.py` near line 273:
 `user_message = data.get("message", "")`).
 
-### `device_action` event (Phase 5)
+### `device_action` event
 
-The agent can ask the device to perform a native action (e.g. set an
-alarm). The orchestrator emits a `device_action` event in addition to
-the normal `tool_call` / `tool_result` pair when the LLM invokes a
-device-targeted tool — the pair stays as the server-side breadcrumb,
-the new event is what the device acts on.
+The agent can ask the device to perform a native action (set an alarm,
+take a photo, etc.). The orchestrator emits a `device_action` event in
+addition to the normal `tool_call` / `tool_result` pair when the LLM
+invokes a device-targeted tool — the pair stays as the server-side
+breadcrumb, the new event is what the device acts on.
 
 ```json
 {
@@ -75,14 +77,43 @@ the new event is what the device acts on.
 ```
 
 - `action` is the tool name (matches the corresponding `tool_call.tool`).
-- `args` schema is per-action. For `set_alarm`: required `hour` (0–23)
-  and `minute` (0–59); optional `label` (string) and `days_of_week`
-  (list of 1=Sun … 7=Sat for repeating alarms).
 - `id` ties the event back to the `tool_call.id` so the UI can
-  correlate the action card with the tool-call card. May be null.
+  correlate the action card with the tool-call card. For camera
+  variants this field is **load-bearing**: it is the key the agent uses
+  to correlate the eventual `/api/companion/upload` POST back to the
+  in-flight tool-call future. May be null only for fire-and-forget
+  intents like `set_alarm`.
 - `device_id` is informational; the agent already routes the event to
   the session's device via the per-session pubsub, so no client-side
   filtering is needed.
+
+Wired actions and their `args` shapes:
+
+- `set_alarm` — required `hour` (0–23) and `minute` (0–59); optional
+  `label` (string) and `days_of_week` (list of 1=Sun … 7=Sat for
+  repeating alarms). Fire-and-forget native intent.
+- `take_photo` — optional `reason` (string, short user-facing
+  rationale supplied by the LLM, e.g. "to identify the plant"); the
+  reason surfaces in the chat card. Triggers the camera-capture flow
+  below.
+- `identify_object_in_photo` — optional `hint` (string narrowing the
+  identification, e.g. "plant", "bird"); same camera-capture flow as
+  `take_photo`, the agent does the vision chaining after the upload
+  lands.
+- `read_text_from_image` — no `args`. Camera-capture flow; the agent
+  OCRs the JPEG.
+- `who_is_in_view` — no `args`. Camera-capture flow; the agent runs
+  face recognition against its enrolled gallery.
+
+```json
+{
+  "type": "device_action",
+  "action": "take_photo",
+  "args": { "reason": "to identify the plant" },
+  "id": "<tool_call_id>",
+  "device_id": "<device name from session>"
+}
+```
 
 The companion app's `parseChatFrame` lists `device_action` in
 `knownEventTypes`; an old client receiving an unknown action name
@@ -90,9 +121,48 @@ The companion app's `parseChatFrame` lists `device_action` in
 keeps going. Older clients without `device_action` support ignore the
 event entirely via the existing `ParsedFrame.Unknown` path.
 
-The Android side requires `<uses-permission
-android:name="com.android.alarm.permission.SET_ALARM"/>` to fire the
-intent silently with `EXTRA_SKIP_UI=true`.
+Permissions: `set_alarm` requires `<uses-permission
+android:name="com.android.alarm.permission.SET_ALARM"/>` (a normal
+permission, granted at install) to fire the intent silently with
+`EXTRA_SKIP_UI=true`. The four camera variants require the runtime
+`CAMERA` permission, granted on first use.
+
+### Camera-capture flow
+
+The camera variants (`take_photo`, `identify_object_in_photo`,
+`read_text_from_image`, `who_is_in_view`) are a three-leg dance, not a
+fire-and-forget intent. The agent emits the `device_action` event
+**while the originating tool call is still in flight** — the MCP shim
+returns a `Future` that the upload resolves.
+
+1. The LLM calls a camera tool. The agent's MCP shim retains a future
+   keyed by `tool_call_id` and emits the `device_action` event with
+   that id in the `id` field.
+2. The companion's `DeviceActionDispatcher` matches the variant via
+   `DeviceAction.fromEvent`, checks the master camera toggle plus the
+   per-tool toggle in Settings, then launches `CaptureActivity` (a
+   transparent `ComponentActivity`) with the `tool_call_id` as an
+   extra. The activity invokes the device camera via
+   `ActivityResultContracts.TakePicture()` against a `FileProvider`
+   URI under the app's `cacheDir`.
+3. On capture success the activity writes the JPEG to
+   `cacheDir/photos/<tool_call_id>.jpg` and routes back to the
+   dispatcher via a `tool_call_id`-keyed callback registry. Cancel /
+   failure routes through the same callback.
+4. The dispatcher POSTs the bytes to `/api/companion/upload` with
+   `tool_call_id` (and the optional `device_id`). The agent stashes
+   the file, mints an `image_url`, and resolves the future. The MCP
+   tool's response then propagates back to the LLM exactly as if it
+   had been an ordinary tool result. The dispatcher deletes the cache
+   file regardless of upload outcome.
+
+The dispatcher returns a `DeviceActionResult` to the chat reducer at
+each stage so the chat card can surface progress: `Disabled` (master
+or per-tool toggle off, capture never fired), `Cancelled` (user backed
+out of the camera), `Failed(reason)` (camera launch error or upload
+failure), `Uploaded` (server acknowledged, future resolved). The
+intermediate `InProgress` / `Uploading` states exist for UI animation
+hooks.
 
 ### `summary_reset` is out-of-band
 
@@ -125,9 +195,8 @@ session_id tap to resume the right one.
 
 `summary_reset` triggers internally on idle-timeout sweep
 (`session_pool.py:340`) or context-size threshold
-(`orchestrator.py:241`). There is no `POST .../summarize` despite what
-the Phase 1 plan's verification step implied. Test the renderer
-organically or by spoofing a frame.
+(`orchestrator.py:241`). There is no `POST .../summarize`. Test the
+renderer organically or by spoofing a frame.
 
 ## STT / TTS
 
@@ -159,7 +228,31 @@ may silently downgrade an unsupported requested format (e.g. mp3) to
 WAV, so the response header is the source of truth, not the requested
 `format`. Empty/whitespace text rejected with 400.
 
-## Push (Phase 4)
+### `POST /api/companion/upload`
+
+Multipart upload (`MultipartBody.FORM`) used by all four camera
+device-action variants to deliver the captured JPEG back to the agent.
+
+Form fields:
+
+- `tool_call_id` (string, required) — the same id the agent supplied
+  in the `device_action` event's `id` field. Keys the upload to the
+  awaiting tool-call future on the agent.
+- `device_id` (string, optional) — the user's `device_name` setting,
+  included only when non-blank.
+- `file` (required) — the JPEG bytes (MIME `image/jpeg`).
+
+Response:
+
+```json
+{ "ok": true, "image_url": "...", "expires_at": 1735689600.0 }
+```
+
+The companion's `CompanionUploadAck` exposes `imageUrl` and
+`expiresAt`. The client uses 60 s call/read/write timeouts to absorb
+the multipart upload plus the server-side handoff to the future.
+
+## Push
 
 ### Registration
 
