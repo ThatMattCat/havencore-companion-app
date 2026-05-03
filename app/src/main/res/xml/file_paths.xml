@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Cache-dir subdir holding companion-app camera captures while they
+         upload. Files are deleted by DeviceActionDispatcher after upload
+         completes; FileProvider grants the camera app a one-shot URI to
+         write into this folder. -->
+    <cache-path
+        name="companion_photos"
+        path="photos/" />
+</paths>

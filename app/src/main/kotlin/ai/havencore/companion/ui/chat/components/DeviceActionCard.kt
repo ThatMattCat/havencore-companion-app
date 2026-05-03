@@ -11,9 +11,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -79,27 +82,39 @@ private fun displayFor(item: TurnEvent.DeviceActionItem): RowDisplay {
             "Action not supported on this device"
         parsed is DeviceAction.SetAlarm && item.result is DeviceActionResult.Fired ->
             "Set alarm for ${formatTime(context, parsed.hour, parsed.minute)}"
-        parsed is DeviceAction.SetAlarm && item.result is DeviceActionResult.NoHandler ->
+        parsed is DeviceAction.SetAlarm && (item.result is DeviceActionResult.NoHandler ||
+            item.result is DeviceActionResult.Failed) ->
             "Couldn't set alarm"
-        parsed is DeviceAction.SetAlarm && item.result is DeviceActionResult.Failed ->
-            "Couldn't set alarm"
+        parsed is DeviceAction.CameraCapture -> cameraCaptureTitle(parsed, item.result)
         else -> "Device action"
     }
     val subtitle = when (val r = item.result) {
-        is DeviceActionResult.NoHandler -> "No alarm app available"
+        is DeviceActionResult.NoHandler ->
+            if (parsed is DeviceAction.CameraCapture) "No camera app available" else "No alarm app available"
         is DeviceActionResult.Failed -> r.reason
         is DeviceActionResult.Unsupported -> item.action
+        is DeviceActionResult.Disabled -> "Enable in Settings to allow this tool"
+        is DeviceActionResult.Cancelled -> null
+        is DeviceActionResult.Uploaded -> cameraCaptureSubtitle(parsed)
+        is DeviceActionResult.Uploading,
+        is DeviceActionResult.InProgress -> null
         is DeviceActionResult.Fired -> (parsed as? DeviceAction.SetAlarm)?.label
     }
     val isFailure = item.result is DeviceActionResult.NoHandler ||
         item.result is DeviceActionResult.Failed ||
         item.result is DeviceActionResult.Unsupported
-    val (disc, onDisc) = if (isFailure) {
-        cs.errorContainer to cs.onErrorContainer
-    } else {
-        cs.primaryContainer to cs.onPrimaryContainer
+    val isMuted = item.result is DeviceActionResult.Disabled ||
+        item.result is DeviceActionResult.Cancelled
+    val (disc, onDisc) = when {
+        isFailure -> cs.errorContainer to cs.onErrorContainer
+        isMuted -> cs.surfaceVariant to cs.onSurfaceVariant
+        else -> cs.primaryContainer to cs.onPrimaryContainer
     }
     val icon = when {
+        parsed is DeviceAction.CameraCapture && isFailure -> Icons.Default.ErrorOutline
+        parsed is DeviceAction.IdentifyObjectInPhoto -> Icons.Default.Search
+        parsed is DeviceAction.ReadTextFromImage -> Icons.AutoMirrored.Filled.MenuBook
+        parsed is DeviceAction.CameraCapture -> Icons.Default.CameraAlt
         isFailure && parsed !is DeviceAction.SetAlarm -> Icons.Default.ErrorOutline
         parsed is DeviceAction.SetAlarm -> Icons.Default.Alarm
         else -> Icons.Default.Build
@@ -111,6 +126,39 @@ private fun displayFor(item: TurnEvent.DeviceActionItem): RowDisplay {
         discColor = disc,
         iconColor = onDisc,
     )
+}
+
+private fun cameraCaptureTitle(
+    parsed: DeviceAction.CameraCapture,
+    result: DeviceActionResult,
+): String {
+    val verb = when (parsed) {
+        is DeviceAction.TakePhoto -> "photo"
+        is DeviceAction.IdentifyObjectInPhoto -> "identification"
+        is DeviceAction.ReadTextFromImage -> "text capture"
+    }
+    return when (result) {
+        is DeviceActionResult.Uploaded -> when (parsed) {
+            is DeviceAction.TakePhoto -> "Photo sent"
+            is DeviceAction.IdentifyObjectInPhoto -> "Sent for identification"
+            is DeviceAction.ReadTextFromImage -> "Sent for text reading"
+        }
+        is DeviceActionResult.Cancelled -> "Cancelled $verb"
+        is DeviceActionResult.Disabled -> "${verb.replaceFirstChar { it.titlecase() }} is off"
+        is DeviceActionResult.Failed,
+        is DeviceActionResult.NoHandler -> "Couldn't capture $verb"
+        else -> when (parsed) {
+            is DeviceAction.TakePhoto -> "Capturing photo…"
+            is DeviceAction.IdentifyObjectInPhoto -> "Capturing for identification…"
+            is DeviceAction.ReadTextFromImage -> "Capturing for text reading…"
+        }
+    }
+}
+
+private fun cameraCaptureSubtitle(parsed: DeviceAction?): String? = when (parsed) {
+    is DeviceAction.TakePhoto -> parsed.reason
+    is DeviceAction.IdentifyObjectInPhoto -> parsed.hint?.let { "Hint: $it" }
+    else -> null
 }
 
 private fun formatTime(context: android.content.Context, hour: Int, minute: Int): String {

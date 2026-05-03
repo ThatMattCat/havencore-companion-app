@@ -6,6 +6,7 @@ import ai.havencore.companion.data.SettingsRepository
 import ai.havencore.companion.device.DeviceActionDispatcher
 import ai.havencore.companion.net.ChatApi
 import ai.havencore.companion.net.ChatWsSession
+import ai.havencore.companion.net.CompanionUploadApi
 import ai.havencore.companion.net.ConversationsApi
 import ai.havencore.companion.net.HavenCoreClient
 import ai.havencore.companion.net.PushApi
@@ -38,9 +39,11 @@ class AppContainer(ctx: Context) {
     val ws = ChatWsSession(http)
     val sttApi = SttApi(http)
     val ttsApi = TtsApi(http)
+    val companionUploadApi = CompanionUploadApi(http)
     val mic = MicRecorder(ctx)
     val ttsPlayer = TtsPlayer(ctx)
-    val deviceActionDispatcher = DeviceActionDispatcher(appContext)
+    val deviceActionDispatcher =
+        DeviceActionDispatcher(appContext, settings, companionUploadApi)
 
     // Phase 4
     val pushApi = PushApi(http)
