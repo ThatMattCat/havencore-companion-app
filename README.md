@@ -14,6 +14,12 @@ The app delivers:
   (mic → STT → `/ws/chat` → TTS) and dismisses ~1.5 s after the reply
   audio ends. The overlay auto-endpoints on silence, with a Stop
   button as a manual override.
+- **Always-listening wall-display mode** (off by default) — a
+  foreground microphone service that runs an on-device "hey selene"
+  wake-word detector (openWakeWord + Silero VAD endpointing). On
+  detection it captures the user's request, opens chat in fullscreen
+  kiosk mode, transcribes, and sends. Intended for a docked tablet;
+  works on a phone for testing.
 - **Inbound push notifications** via [UnifiedPush](https://unifiedpush.org/)
   with a self-hosted ntfy distributor. Push payloads carry an optional
   `session_id`; tapping a notification deep-links to that thread in
@@ -72,7 +78,7 @@ is wiped or the server's adb keys change.
 source scripts/adb-env.sh                                     # PATHs + mDNS-discover + adb connect
 ./gradlew installDebug                                        # build + push to phone
 adb shell am start -n ai.havencore.companion/.MainActivity    # launch
-adb logcat | grep -i 'havencore\|ChatWs\|ChatVM\|MicRec\|TtsPlay\|Voice:VIS\|Voice:Sess\|Push:Recv\|Push:Reg\|Push:Api\|DeviceAction\|CaptureActivity'   # tail logs
+adb logcat | grep -i 'havencore\|ChatWs\|ChatVM\|MicRec\|TtsPlay\|Voice:VIS\|Voice:Sess\|Push:Recv\|Push:Reg\|Push:Api\|DeviceAction\|CaptureActivity\|WakeWord'   # tail logs
 ```
 
 The phone's _connect_ port (separate from the pair port) rotates every
@@ -151,6 +157,37 @@ visualizer mapping, and OEM gotchas (Samsung's role-picker filter
 needs a `RecognitionService` stub; the role-request intent is
 unreliable on Samsung, so the helper falls back to
 `Settings.ACTION_VOICE_INPUT_SETTINGS`).
+
+### Wall-display mode
+
+A second voice surface for the docked-tablet scenario: a foreground
+microphone service that continuously listens for "hey selene"
+on-device (no audio leaves the device until a detection fires), then
+captures the user's request, opens chat in fullscreen kiosk mode, and
+sends the transcript on the same `/ws/chat` socket. Toggle in
+**Settings → Wall-display mode → Enable wall-display mode**; off by
+default so phone users get the unchanged behavior. Drop the four ONNX
+files (`embedding_model.onnx`, `melspectrogram.onnx`,
+`wakeword/hey_selene.onnx`, `wakeword/silero_vad.onnx`) into
+`app/src/main/assets/` before flashing — without them the service
+logs `Failed at engine_start` and stops itself.
+
+The persistent notification narrates each phase
+(`Listening for 'hey selene'` → `Detected (score=…)` → `Captured Xms`
+→ `Failed at <stage>: …`), so the easiest way to debug a missed wake
+is the notification shade rather than `adb logcat`.
+
+The wake-word stack uses [openWakeWord](https://github.com/dscripka/openWakeWord)
+(`xyz.rementia:openwakeword:0.1.3` Android bindings) with a
+custom-trained "hey selene" classifier, and
+[snakers4/silero-vad](https://github.com/snakers4/silero-vad) for
+post-wake end-of-utterance detection. The classifier ONNX bakes a
+Sigmoid as its final op, so the lib's threshold compare operates
+directly in probability space (default 0.420).
+
+See [`docs/wake-word.md`](docs/wake-word.md) for the full
+architecture, the Galaxy S24 silent-handoff workaround, diagnostic
+log tags, and the kiosk theme + activity-launch contract.
 
 ### Device actions
 
@@ -255,9 +292,10 @@ fronting it with a reverse proxy that adds authentication.
 See [`docs/wire-protocol.md`](docs/wire-protocol.md) for the WS
 framing and event-shape gotchas the app builds on,
 [`docs/voice-assist.md`](docs/voice-assist.md) for the assist-overlay
-architecture, and [`docs/design-system.md`](docs/design-system.md)
-for color / typography / shape / motion tokens and component
-patterns.
+architecture, [`docs/wake-word.md`](docs/wake-word.md) for the
+wall-display / wake-word architecture, and
+[`docs/design-system.md`](docs/design-system.md) for color /
+typography / shape / motion tokens and component patterns.
 
 ## Roadmap
 
@@ -265,6 +303,15 @@ Capabilities not yet shipped:
 
 - **Multi-turn assist** — the overlay handles a single round trip per
   invocation. A multi-turn redesign is the next significant surface.
+- **Continuous follow-up in wall-display mode** — wake-word fires
+  once per turn today. Re-triggering capture after TTS playback (so
+  the second turn doesn't need another "hey selene") is the natural
+  next step.
+- **Lock-task / true kiosk pinning** for the docked-tablet scenario.
+  The current "kiosk mode" flips fullscreen + show-when-locked +
+  screen-on but doesn't pin the activity over the launcher. Will be
+  wired alongside boot-completed autostart when the Lenovo Tab M11
+  arrives.
 - **Todo / shopping list** — pending the agent-side `todo.*` MCP
   tools.
 - **Reverse-proxy auth** — pending agent-side support; useful when

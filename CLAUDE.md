@@ -23,6 +23,12 @@ AI smart-home assistant. The agent itself lives in the sibling repo at
   (`take_photo`, `identify_object_in_photo`, `read_text_from_image`,
   `who_is_in_view`) that bounce a JPEG back to the agent via
   `POST /api/companion/upload` so the LLM can see the image.
+- Wall-display mode: opt-in foreground microphone service that runs an
+  on-device "hey selene" wake-word detector (openWakeWord +
+  Silero VAD), captures the post-wake utterance, and launches
+  `MainActivity` in fullscreen kiosk mode so the chat path
+  transcribes + sends without a user tap. Off by default; intended
+  for a docked tablet. See `docs/wake-word.md`.
 
 `README.md` is the user-facing description; this file is for working in
 the codebase.
@@ -57,7 +63,7 @@ touch IPs.
 source scripts/adb-env.sh        # PATHs + mDNS-discover + adb connect
 ./gradlew installDebug           # build + push to phone in one step
 adb shell am start -n ai.havencore.companion/.MainActivity
-adb logcat | grep -i 'havencore\|ChatWs\|ChatVM\|MicRec\|TtsPlay\|Voice:VIS\|Voice:Sess\|Push:Recv\|Push:Reg\|Push:Api'   # tail logs
+adb logcat | grep -i 'havencore\|ChatWs\|ChatVM\|MicRec\|TtsPlay\|Voice:VIS\|Voice:Sess\|Push:Recv\|Push:Reg\|Push:Api\|WakeWord'   # tail logs
 ```
 
 Override discovery if mDNS is blocked:
@@ -91,7 +97,7 @@ app/src/main/kotlin/ai/havencore/companion/
 ├── data/
 │   ├── ServerConfig.kt
 │   ├── ThemeMode.kt             # System / Light / Dark enum (DataStore-persisted)
-│   ├── SettingsRepository.kt    # DataStore<Preferences>: baseUrl, deviceName, lastSessionId, autoSpeak, default_assistant_prompt_seen, push_*, silence_timeout_ms, dynamic_color, theme_mode, companion_camera_take_photo_enabled, companion_camera_identify_enabled, companion_camera_read_text_enabled, companion_camera_who_is_in_view_enabled
+│   ├── SettingsRepository.kt    # DataStore<Preferences>: baseUrl, deviceName, lastSessionId, autoSpeak, default_assistant_prompt_seen, push_*, silence_timeout_ms, dynamic_color, theme_mode, companion_camera_*_enabled, wall_display_enabled, wakeword_model_asset, wakeword_threshold_milli
 │   └── DeviceAction.kt          # sealed DeviceAction with five variants (SetAlarm + TakePhoto / IdentifyObjectInPhoto / ReadTextFromImage / WhoIsInView sharing a CameraCapture sub-interface keyed by toolCallId) + DeviceActionResult; fromEvent maps ChatEvent.DeviceAction wire payload to typed action
 ├── device/
 │   ├── DeviceActionDispatcher.kt # dispatches both fire-and-forget intents (e.g. AlarmClock.ACTION_SET_ALARM with FLAG_ACTIVITY_NEW_TASK + EXTRA_SKIP_UI) and the camera capture+upload round-trip; checks Settings toggles before launching CaptureActivity / posting to CompanionUploadApi
@@ -126,6 +132,13 @@ app/src/main/kotlin/ai/havencore/companion/
 │   ├── AssistLifecycleOwner.kt         # Lifecycle/SavedState/ViewModelStore shim for ComposeView
 │   ├── AssistOverlay.kt                # bottom-sheet Compose surface
 │   └── AssistVisualizers.kt            # phase-specific 120.dp hero composables
+├── wakeword/                    # wall-display always-listening service — see docs/wake-word.md
+│   ├── MicrophoneForegroundService.kt  # foreground mic service; owns controller; rewrites notification per phase; launches MainActivity w/ EXTRA_KIOSK + EXTRA_CAPTURE_PATH on a captured utterance
+│   ├── WakeWordController.kt           # Listening <-> Capturing state machine + engine lifecycle + mic hand-off; SharedFlow<Event>: ListeningStarted / Detected / Captured / Failed / Stopped
+│   ├── WakeCaptureSession.kt           # post-wake AudioRecord with warm-up + retry loop (S24 silent-handoff mitigation) and Silero VAD-driven endpointing; writes wake-*.wav
+│   ├── SileroVad.kt                    # ONNX wrapper for silero_vad.onnx; auto-detects split-h/c vs unified-state layouts; exposes isDegraded
+│   ├── PcmWavWriter.kt                 # streaming 16-bit mono PCM-16 with patched RIFF headers
+│   └── WakeWordChannel.kt              # havencore_wakeword notification channel (IMPORTANCE_LOW)
 └── ui/
     ├── nav/HavenNav.kt          # NavHost + route table
     ├── settings/{SettingsScreen.kt, SettingsViewModel.kt}
@@ -230,6 +243,13 @@ Tighten when remote access becomes real.
   phase → visualizer mapping, auto-endpointing silence watcher, and the
   Samsung-specific gotchas (`RecognitionService` stub, role-request
   intent fallback to `Settings.ACTION_VOICE_INPUT_SETTINGS`).
+- `docs/wake-word.md` — wall-display always-listening service:
+  openwakeword + Silero VAD stack, ONNX asset layout, the
+  `Listening ↔ Capturing` state machine, the Galaxy S24 silent-handoff
+  workaround, notification narration as the on-device diagnostic
+  surface, diagnostic log tags, and the kiosk activity launch
+  contract. Read before touching anything under `wakeword/` or the
+  wake hand-off in `HavenNav` / `ChatViewModel.ingestWakeCapture`.
 - `docs/design-system.md` — color / typography / shape / spacing /
   motion / elevation tokens, component patterns, vibe-shift recipes,
   and the pre-merge UI checklist. Read before any UI change.
