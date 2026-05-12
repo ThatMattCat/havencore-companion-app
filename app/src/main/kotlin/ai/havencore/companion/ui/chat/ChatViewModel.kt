@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 
 class ChatViewModel(
@@ -108,22 +109,12 @@ class ChatViewModel(
     private fun runSession() {
         viewModelScope.launch {
             val cfg = settings.configFlow.first()
+            Log.i(TAG, "runSession start sessionToResume=$sessionToResume baseUrl=${cfg.baseUrl}")
 
-            // 1. Hydrate prior turns once. retry() is a re-connect, not a
-            //    re-hydrate — the existing turn list stays put.
-            if (sessionToResume != null && !hasHydrated) {
-                val resumed = chatApi.resumeConversation(cfg.baseUrl, sessionToResume)
-                resumed.onSuccess { resp ->
-                    hasHydrated = true
-                    val turns = ResumeMapper.toTurns(resp.messages, ::nextKey)
-                    _state.update { it.copy(turns = turns, sessionId = resp.session_id) }
-                }.onFailure { t ->
-                    Log.w(TAG, "resume failed: ${t.message}")
-                }
-            }
-
-            // 2. Open the WS. The supervisor inside ws.connect lives on
-            //    viewModelScope, so it tears down when this VM is cleared.
+            // Open the WS first, in parallel with the (potentially slow)
+            // resume REST call. Otherwise a hung resume keeps the socket
+            // closed and the kiosk wake hand-off, which races to send the
+            // captured utterance, has nothing to send into.
             val frames = ws.connect(
                 scope = viewModelScope,
                 baseUrl = cfg.baseUrl,
@@ -131,13 +122,33 @@ class ChatViewModel(
                 deviceName = cfg.deviceName,
                 idleTimeout = -1,
             )
+            Log.i(TAG, "ws.connect kicked off")
 
-            // 3. Mirror status into the UI state.
+            // Mirror status into the UI state.
             launch {
-                ws.status.collect { s -> _state.update { it.copy(connection = mapStatus(s)) } }
+                ws.status.collect { s ->
+                    Log.i(TAG, "ws status -> $s")
+                    _state.update { it.copy(connection = mapStatus(s)) }
+                }
             }
 
-            // 4. Reduce inbound frames into the turn list.
+            // Hydrate prior turns once, in parallel. retry() is a re-connect,
+            // not a re-hydrate — the existing turn list stays put.
+            if (sessionToResume != null && !hasHydrated) {
+                launch {
+                    val resumed = chatApi.resumeConversation(cfg.baseUrl, sessionToResume)
+                    resumed.onSuccess { resp ->
+                        hasHydrated = true
+                        val turns = ResumeMapper.toTurns(resp.messages, ::nextKey)
+                        _state.update { it.copy(turns = turns, sessionId = resp.session_id) }
+                        Log.i(TAG, "resume ok turns=${turns.size}")
+                    }.onFailure { t ->
+                        Log.w(TAG, "resume failed: ${t.message}")
+                    }
+                }
+            }
+
+            // Reduce inbound frames into the turn list.
             frames.collect { frame -> handleFrame(frame) }
         }
     }
@@ -169,7 +180,9 @@ class ChatViewModel(
             )
         }
 
-        if (!ws.send(text)) {
+        val sent = ws.send(text)
+        Log.i(TAG, "sendMessage fromVoice=$fromVoice sent=$sent len=${text.length}")
+        if (!sent) {
             // No socket — surface an error chip and re-enable Send.
             _state.update { s ->
                 s.copy(
@@ -253,7 +266,10 @@ class ChatViewModel(
      * in place and leave deletion to the cache pruner.
      */
     fun ingestWakeCapture(wavFile: java.io.File) {
-        if (!wavFile.exists() || wavFile.length() <= 0) {
+        val exists = wavFile.exists()
+        val len = if (exists) wavFile.length() else -1L
+        Log.i(TAG, "ingestWakeCapture file=${wavFile.name} exists=$exists length=$len")
+        if (!exists || len <= 0) {
             setVoiceError("Capture file missing")
             return
         }
@@ -264,18 +280,43 @@ class ChatViewModel(
     private fun runTranscribeAndSend(file: java.io.File, contentType: String) {
         viewModelScope.launch {
             val cfg = settings.configFlow.first()
+            Log.i(TAG, "transcribe start file=${file.name} ct=$contentType baseUrl=${cfg.baseUrl}")
+            val t0 = System.currentTimeMillis()
             val result = sttApi.transcribe(cfg.baseUrl, file, contentType = contentType)
+            Log.i(TAG, "transcribe done ms=${System.currentTimeMillis() - t0} ok=${result.isSuccess}")
             result.fold(
                 onSuccess = { text ->
+                    Log.i(TAG, "transcribe text='${text.take(80)}' len=${text.length}")
                     if (text.isBlank()) {
                         setVoiceError("No speech detected")
                         setVoice(VoiceUi.Idle)
                     } else {
+                        // Wake-word hand-off can land here while runSession() is
+                        // still mid-handshake on /ws/chat; ws.send would return
+                        // false and the user turn would silently error out as
+                        // "Not connected". Wait for the socket — instant if
+                        // already up, bounded otherwise.
+                        val statusBefore = ws.status.value
+                        Log.i(TAG, "awaitWsReady before=$statusBefore")
+                        val tWs = System.currentTimeMillis()
+                        val ready = withTimeoutOrNull(WS_READY_TIMEOUT_MS) {
+                            ws.status.first { it == ChatWsSession.Status.Connected }
+                        } != null
+                        Log.i(
+                            TAG,
+                            "awaitWsReady ready=$ready waitMs=${System.currentTimeMillis() - tWs} " +
+                                "after=${ws.status.value}",
+                        )
                         setVoice(VoiceUi.Idle)
-                        sendMessage(text, fromVoice = true)
+                        if (!ready) {
+                            setVoiceError("Couldn't connect to server")
+                        } else {
+                            sendMessage(text, fromVoice = true)
+                        }
                     }
                 },
                 onFailure = { t ->
+                    Log.w(TAG, "transcribe failed: ${t.message}", t)
                     setVoiceError(t.message ?: "transcription failed")
                     setVoice(VoiceUi.Idle)
                 },
@@ -415,6 +456,7 @@ class ChatViewModel(
 
     private companion object {
         const val TAG = "ChatVM"
+        const val WS_READY_TIMEOUT_MS = 8_000L
     }
 }
 

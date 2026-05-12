@@ -23,7 +23,6 @@ class MainActivity : ComponentActivity() {
 
     private val pendingSessionId = MutableStateFlow<String?>(null)
     private val pendingWakeCapture = MutableStateFlow<String?>(null)
-    private val kioskMode = MutableStateFlow(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val kiosk = intent?.getBooleanExtra(
@@ -51,7 +50,6 @@ class MainActivity : ComponentActivity() {
                     onSessionIdConsumed = { pendingSessionId.value = null },
                     pendingWakeCapturePath = pendingWakeCapture,
                     onWakeCaptureConsumed = { pendingWakeCapture.value = null },
-                    kioskMode = kioskMode,
                 )
             }
         }
@@ -73,10 +71,7 @@ class MainActivity : ComponentActivity() {
         val kiosk = intent?.getBooleanExtra(
             MicrophoneForegroundService.EXTRA_KIOSK, false,
         ) == true
-        if (kiosk) {
-            kioskMode.value = true
-            applyKioskWindow(true)
-        }
+        if (kiosk) applyKioskWindow(true)
         val path = intent?.getStringExtra(MicrophoneForegroundService.EXTRA_CAPTURE_PATH)
         if (!path.isNullOrBlank()) pendingWakeCapture.value = path
     }

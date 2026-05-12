@@ -3,6 +3,7 @@ package ai.havencore.companion.wakeword
 import ai.havencore.companion.HavenCoreApp
 import ai.havencore.companion.MainActivity
 import ai.havencore.companion.R
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
@@ -11,6 +12,7 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.getSystemService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -18,6 +20,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.File
+import java.util.Locale
 
 /**
  * Foreground microphone service for wall-display mode. Holds the mic
@@ -80,22 +83,56 @@ class MicrophoneForegroundService : Service() {
         when (ev) {
             is WakeWordController.Event.ListeningStarted -> {
                 Log.i(TAG, "listening")
+                updateNotification("Listening for 'hey selene'")
             }
             is WakeWordController.Event.Detected -> {
                 Log.i(TAG, "detected ${ev.modelName} score=${ev.score}")
+                updateNotification(
+                    String.format(Locale.US, "Detected (score=%.2f). Capturing…", ev.score),
+                )
             }
             is WakeWordController.Event.Captured -> {
-                Log.i(TAG, "captured ${ev.file.name} durMs=${ev.durationMs} speech=${ev.hadSpeech}")
-                if (ev.hadSpeech) launchChatWithCapture(ev.file)
+                val size = runCatching { ev.file.length() }.getOrDefault(-1L)
+                Log.i(
+                    TAG,
+                    "captured ${ev.file.name} durMs=${ev.durationMs} " +
+                        "speech=${ev.hadSpeech} bytes=$size",
+                )
+                if (ev.hadSpeech) {
+                    updateNotification(
+                        String.format(
+                            Locale.US,
+                            "Captured %dms. Opening chat…",
+                            ev.durationMs,
+                        ),
+                    )
+                    launchChatWithCapture(ev.file)
+                } else {
+                    updateNotification(
+                        String.format(
+                            Locale.US,
+                            "Captured %dms — no speech detected. Listening again.",
+                            ev.durationMs,
+                        ),
+                    )
+                }
             }
             is WakeWordController.Event.Failed -> {
                 Log.w(TAG, "stage=${ev.stage} cause=${ev.cause.message}")
+                updateNotification(
+                    "Failed at ${ev.stage}: ${ev.cause.message ?: ev.cause::class.simpleName}",
+                )
                 if (ev.stage == "engine_start") stopSelf()
             }
             WakeWordController.Event.Stopped -> {
                 Log.i(TAG, "controller stopped")
             }
         }
+    }
+
+    private fun updateNotification(text: String) {
+        val nm = getSystemService<NotificationManager>() ?: return
+        nm.notify(NOTIF_ID, buildNotification(text))
     }
 
     private fun launchChatWithCapture(file: File) {
@@ -111,6 +148,19 @@ class MicrophoneForegroundService : Service() {
     }
 
     private fun startForegroundCompat() {
+        val notif = buildNotification(getString(R.string.wakeword_notif_text))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(
+                NOTIF_ID,
+                notif,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
+            )
+        } else {
+            startForeground(NOTIF_ID, notif)
+        }
+    }
+
+    private fun buildNotification(text: String): android.app.Notification {
         val stopIntent = Intent(this, MicrophoneForegroundService::class.java)
             .setAction(ACTION_STOP)
         val stopPi = PendingIntent.getService(
@@ -124,25 +174,18 @@ class MicrophoneForegroundService : Service() {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val notif = NotificationCompat.Builder(this, WakeWordChannel.ID)
+        return NotificationCompat.Builder(this, WakeWordChannel.ID)
             .setSmallIcon(R.drawable.ic_push_small)
             .setContentTitle(getString(R.string.wakeword_notif_title))
-            .setContentText(getString(R.string.wakeword_notif_text))
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setOnlyAlertOnce(true)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setContentIntent(contentPi)
             .addAction(0, getString(R.string.wakeword_notif_stop), stopPi)
             .build()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(
-                NOTIF_ID,
-                notif,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
-            )
-        } else {
-            startForeground(NOTIF_ID, notif)
-        }
     }
 
     override fun onDestroy() {

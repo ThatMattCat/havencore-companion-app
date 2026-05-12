@@ -167,12 +167,12 @@ class WakeWordController(
             _events.emit(Event.Detected(modelName, score))
             _phase.value = Phase.Capturing
             stopEngineLocked()
-            // The lib's AudioRecord releases asynchronously after engine.stop()
-            // — cooperative cancellation of the inner coroutine. Without this
-            // gap the capture AudioRecord overlaps with the engine's, and on
-            // some devices (observed on Galaxy S24) the new recorder is
-            // routed through a degraded audio path that yields silence.
-            delay(150)
+            // Small warm-up so the lib's coroutine cancellation can register
+            // before we open a new AudioRecord on the same source. The
+            // capture session has its own warm-up + retry loop that handles
+            // the slow-release case on Samsung devices, so we don't need a
+            // large blanket delay here.
+            delay(POST_DETECTION_WARMUP_MS)
             val vadRef = vad
             if (vadRef == null) {
                 _events.emit(Event.Failed("vad_missing", IllegalStateException("VAD not loaded")))
@@ -186,6 +186,13 @@ class WakeWordController(
                 _events.emit(Event.Captured(res.file, res.durationMs, res.hadSpeech))
             }.onFailure { t ->
                 _events.emit(Event.Failed("capture", t))
+                // A vad_degraded failure means the ONNX session is wedged for
+                // the rest of its lifetime — drop the reference so the next
+                // startEngineLocked() rebuilds it.
+                if (t.message == "vad_degraded") {
+                    runCatching { vad?.close() }
+                    vad = null
+                }
             }
             _phase.value = Phase.Listening
             startEngineLocked()
@@ -198,5 +205,9 @@ class WakeWordController(
         // 1.5 s suppresses bursty re-triggers without colliding with the
         // shortest plausible "hey selene + request" cadence.
         private const val COOLDOWN_MS = 1500L
+        // Brief gap between engine.stop() and opening the capture mic, just
+        // enough for the lib's coroutine cancellation to register. The real
+        // silent-handoff mitigation is the retry loop in WakeCaptureSession.
+        private const val POST_DETECTION_WARMUP_MS = 50L
     }
 }

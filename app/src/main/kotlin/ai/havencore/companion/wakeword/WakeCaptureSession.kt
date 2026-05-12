@@ -32,16 +32,25 @@ import java.io.File
  * produce normal audio. We lose AEC/AGC/NS vs VOICE_COMMUNICATION, but at
  * close range with a short utterance this is negligible.
  *
+ * Even with matched sources, on some devices the new AudioRecord opens
+ * before the engine's old one has fully released the audio HAL and the
+ * first warm-up frames come back all zero. The capture loop now reads up
+ * to [WARMUP_FRAMES_PER_ATTEMPT] frames per attempt and reopens up to
+ * [MAX_WARMUP_ATTEMPTS] times if every sample is below
+ * [SILENT_PEAK_THRESHOLD], so a slow handoff yields a logged retry rather
+ * than a silent WAV. The first attempt that returns non-silent samples
+ * keeps those samples in the WAV so we don't clip the user's first word.
+ *
  * Endpointing contract:
- *  - Pre-roll: append up to [PRE_ROLL_MS] of audio that arrived before wake
- *    fired (caller supplies via [preRollPcm]) so the start of the wake-word
- *    or the first phoneme of the request isn't clipped.
  *  - Speech latch: only start the silence countdown after Silero has
  *    reported speech for [MIN_SPEECH_FRAMES] frames; protects against
  *    immediate-silence false positives at session start.
  *  - End-of-utterance: after the speech latch, [SILENCE_FRAMES_TO_END]
  *    consecutive sub-threshold frames terminate.
  *  - Hard cap: [MAX_CAPTURE_MS] absolute ceiling.
+ *  - VAD short-circuit: if [SileroVad.isDegraded] flips during the run
+ *    we abort early so the foreground service can surface a Failed event
+ *    instead of waiting out the hard cap on noise.
  */
 class WakeCaptureSession(
     private val ctx: Context,
@@ -52,12 +61,13 @@ class WakeCaptureSession(
         val file: File,
         val durationMs: Long,
         val hadSpeech: Boolean,
+        val totalFrames: Int,
+        val speechFrames: Int,
     )
 
     @SuppressLint("MissingPermission")
     suspend fun capture(
         outDir: File,
-        preRollPcm: ShortArray? = null,
         speechThreshold: Float = DEFAULT_SPEECH_THRESHOLD,
     ): kotlin.Result<Result> = withContext(Dispatchers.IO) {
         if (!hasRecordAudio()) {
@@ -68,43 +78,27 @@ class WakeCaptureSession(
         outDir.mkdirs()
         val outFile = File(outDir, "wake-${System.currentTimeMillis()}.wav")
         val writer = PcmWavWriter(outFile, sampleRate = SAMPLE_RATE_HZ, channels = 1)
-        val minBuf = AudioRecord.getMinBufferSize(
-            SAMPLE_RATE_HZ,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-        )
-        val bufBytes = maxOf(minBuf, FRAME_SAMPLES * 2 * 4)
-        val record = AudioRecord(
-            MediaRecorder.AudioSource.MIC,
-            SAMPLE_RATE_HZ,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-            bufBytes,
-        )
-        if (record.state != AudioRecord.STATE_INITIALIZED) {
+        val frameShort = ShortArray(FRAME_SAMPLES)
+
+        val opened = openMicWithWarmup(writer, frameShort)
+        if (opened == null) {
             writer.close()
             outFile.delete()
             return@withContext kotlin.Result.failure(
-                IllegalStateException("AudioRecord failed to initialize"),
+                IllegalStateException("silent_audio_after_handoff"),
             )
         }
+        val (record, warmupFrames) = opened
 
         vad.reset()
-        val frameShort = ShortArray(FRAME_SAMPLES)
         val frameFloat = FloatArray(FRAME_SAMPLES)
         val started = System.currentTimeMillis()
         var speechSeen = 0
         var silenceRun = 0
-        var totalFrames = 0
+        var totalFrames = warmupFrames
         var latched = false
 
         try {
-            record.startRecording()
-            if (preRollPcm != null && preRollPcm.isNotEmpty()) {
-                val cap = (PRE_ROLL_MS * SAMPLE_RATE_HZ / 1000)
-                val start = maxOf(0, preRollPcm.size - cap)
-                writer.writeFrame(preRollPcm, preRollPcm.size - start)
-            }
             while (true) {
                 val n = record.read(frameShort, 0, FRAME_SAMPLES)
                 if (n <= 0) continue
@@ -115,6 +109,11 @@ class WakeCaptureSession(
                     for (i in n until FRAME_SAMPLES) frameFloat[i] = 0f
                 }
                 val prob = vad.processFrame(frameFloat)
+                if (vad.isDegraded) {
+                    return@withContext kotlin.Result.failure(
+                        IllegalStateException("vad_degraded"),
+                    )
+                }
                 val elapsed = System.currentTimeMillis() - started
                 if (elapsed > MAX_CAPTURE_MS) break
                 if (prob >= speechThreshold) {
@@ -133,7 +132,13 @@ class WakeCaptureSession(
                     "latched=$latched durMs=$durationMs file=${outFile.name}",
             )
             kotlin.Result.success(
-                Result(outFile, durationMs, hadSpeech = latched),
+                Result(
+                    file = outFile,
+                    durationMs = durationMs,
+                    hadSpeech = latched,
+                    totalFrames = totalFrames,
+                    speechFrames = speechSeen,
+                ),
             )
         } catch (ce: CancellationException) {
             throw ce
@@ -145,6 +150,84 @@ class WakeCaptureSession(
             runCatching { record.release() }
             writer.close()
         }
+    }
+
+    /**
+     * Open + start an [AudioRecord] and verify the first frames carry real
+     * audio. Returns the running recorder plus the number of warm-up frames
+     * already written to [writer], or null if every attempt came back
+     * silent. Silent frames are not written; non-silent warm-up frames are
+     * preserved so we don't lose the user's first phoneme.
+     */
+    @SuppressLint("MissingPermission")
+    private fun openMicWithWarmup(
+        writer: PcmWavWriter,
+        scratch: ShortArray,
+    ): Pair<AudioRecord, Int>? {
+        val minBuf = AudioRecord.getMinBufferSize(
+            SAMPLE_RATE_HZ,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT,
+        )
+        val bufBytes = maxOf(minBuf, FRAME_SAMPLES * 2 * 4)
+        var attempt = 0
+        while (attempt < MAX_WARMUP_ATTEMPTS) {
+            attempt++
+            val record = AudioRecord(
+                MediaRecorder.AudioSource.MIC,
+                SAMPLE_RATE_HZ,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+                bufBytes,
+            )
+            if (record.state != AudioRecord.STATE_INITIALIZED) {
+                Log.w(TAG, "AudioRecord init failed attempt=$attempt")
+                runCatching { record.release() }
+                Thread.sleep(WARMUP_RETRY_DELAY_MS)
+                continue
+            }
+            runCatching { record.startRecording() }
+                .onFailure {
+                    Log.w(TAG, "startRecording failed attempt=$attempt", it)
+                    runCatching { record.release() }
+                    Thread.sleep(WARMUP_RETRY_DELAY_MS)
+                    return@onFailure
+                }
+            if (record.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+                runCatching { record.release() }
+                Thread.sleep(WARMUP_RETRY_DELAY_MS)
+                continue
+            }
+            var nonSilentSeen = false
+            val warmupBuffer = ArrayList<ShortArray>(WARMUP_FRAMES_PER_ATTEMPT)
+            for (i in 0 until WARMUP_FRAMES_PER_ATTEMPT) {
+                val n = record.read(scratch, 0, FRAME_SAMPLES)
+                if (n <= 0) break
+                var peak = 0
+                for (j in 0 until n) {
+                    val v = if (scratch[j] >= 0) scratch[j].toInt() else -scratch[j].toInt()
+                    if (v > peak) peak = v
+                }
+                if (peak >= SILENT_PEAK_THRESHOLD) {
+                    nonSilentSeen = true
+                }
+                warmupBuffer += scratch.copyOf(n)
+            }
+            if (nonSilentSeen) {
+                // Persist warm-up audio so the first phoneme isn't clipped.
+                for (frame in warmupBuffer) writer.writeFrame(frame, frame.size)
+                return record to warmupBuffer.size
+            }
+            Log.w(
+                TAG,
+                "warm-up silent attempt=$attempt frames=${warmupBuffer.size}; reopening",
+            )
+            runCatching { record.stop() }
+            runCatching { record.release() }
+            Thread.sleep(WARMUP_RETRY_DELAY_MS)
+        }
+        Log.e(TAG, "all $MAX_WARMUP_ATTEMPTS warm-up attempts returned silence")
+        return null
     }
 
     private fun hasRecordAudio(): Boolean =
@@ -162,7 +245,14 @@ class WakeCaptureSession(
         // ~150 ms of speech before we trust the silence countdown.
         const val MIN_SPEECH_FRAMES = 5
         const val MAX_CAPTURE_MS = 10_000L
-        const val PRE_ROLL_MS = 200
         const val DEFAULT_SPEECH_THRESHOLD = 0.5f
+
+        // Below this peak the audio HAL is almost certainly handing us the
+        // post-handoff "silent path" rather than real mic samples — even a
+        // dead-quiet room registers > 8 on a normal MIC source.
+        const val SILENT_PEAK_THRESHOLD = 8
+        const val WARMUP_FRAMES_PER_ATTEMPT = 4
+        const val MAX_WARMUP_ATTEMPTS = 3
+        const val WARMUP_RETRY_DELAY_MS = 75L
     }
 }

@@ -37,7 +37,6 @@ fun HavenNav(
     onSessionIdConsumed: () -> Unit = {},
     pendingWakeCapturePath: StateFlow<String?> = MutableStateFlow(null),
     onWakeCaptureConsumed: () -> Unit = {},
-    kioskMode: StateFlow<Boolean> = MutableStateFlow(false),
 ) {
     // Read the persisted ServerConfig once before deciding the start
     // destination; otherwise collectAsState's synchronous initial value would
@@ -75,14 +74,20 @@ fun HavenNav(
     // session if there is one, otherwise starting a fresh session. The
     // composable below picks the capture path up from the same StateFlow and
     // calls ingestWakeCapture on the ChatViewModel.
+    //
+    // Key on the capture path only, and bail early when it's null: the
+    // chat composable consumes the path by flipping the StateFlow back to
+    // null, which would otherwise re-trigger this effect and re-navigate.
+    // No popUpTo: combined with launchSingleTop on the same route it would
+    // destroy the existing chat entry before pushing a new one, creating a
+    // second ChatViewModel that fights the first one over the singleton
+    // WebSocket.
     val pendingCapture by pendingWakeCapturePath.collectAsState()
-    val isKiosk by kioskMode.collectAsState()
-    LaunchedEffect(pendingCapture, isKiosk) {
-        if (pendingCapture == null && !isKiosk) return@LaunchedEffect
+    LaunchedEffect(pendingCapture) {
+        if (pendingCapture == null) return@LaunchedEffect
         val lastSid = container.settings.lastSessionId()
         val route = if (lastSid.isNullOrBlank()) "chat" else "chat?sessionId=$lastSid"
         nav.navigate(route) {
-            popUpTo("history") { inclusive = false }
             launchSingleTop = true
         }
     }

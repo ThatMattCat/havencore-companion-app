@@ -62,6 +62,8 @@ class SileroVad(
     @Volatile private var stateBuffer: FloatArray = FloatArray(0)
     @Volatile private var degraded: Boolean = false
 
+    val isDegraded: Boolean get() = degraded
+
     init {
         val bytes = context.assets.open(assetPath).use { it.readBytes() }
         session = env.createSession(bytes, OrtSession.SessionOptions())
