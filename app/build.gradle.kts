@@ -68,4 +68,6 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.unifiedpush.connector)
+    implementation(libs.openwakeword)
+    implementation(libs.onnxruntime.android)
 }

@@ -1,0 +1,19 @@
+Wake-word + VAD ONNX assets. Files are gitignored — see /.gitignore.
+
+This directory holds ONNX files whose path we control:
+  hey_selene.onnx          custom-trained wake-word classifier (sigmoid baked
+                           into the graph, per openWakeWord / HA convention)
+  silero_vad.onnx          end-of-utterance VAD (snakers4/silero-vad)
+
+The openwakeword-android-kt library hard-codes the front-end ONNX paths at
+the AssetManager root — so these two live in app/src/main/assets/ directly:
+  melspectrogram.onnx      openWakeWord front-end feature model
+  embedding_model.onnx     openWakeWord front-end embedding model
+
+Threshold defaults to 0.420 (probability space). The library compares the
+raw ONNX output directly to this value — no client-side sigmoid is applied,
+because the Sigmoid node is the final op of the exported graph. Without
+the four files in place, MicrophoneForegroundService logs "engine_start
+failed" and stops itself; the rest of the app is unaffected. Swap the
+active wake-word model via SettingsRepository.setWakeWordModelAsset()
+rather than renaming files in this directory.

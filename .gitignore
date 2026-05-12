@@ -69,3 +69,11 @@ lint/tmp/
 # OS noise
 .DS_Store
 Thumbs.db
+
+# Wake-word + VAD model binaries. Each install supplies its own; see
+# app/src/main/assets/wakeword/.gitkeep for the expected filenames.
+# The openwakeword lib hard-codes the front-end paths at assets root, so
+# melspectrogram.onnx + embedding_model.onnx live there directly.
+app/src/main/assets/wakeword/*.onnx
+app/src/main/assets/melspectrogram.onnx
+app/src/main/assets/embedding_model.onnx

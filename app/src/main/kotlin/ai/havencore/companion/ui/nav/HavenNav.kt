@@ -35,6 +35,9 @@ fun HavenNav(
     container: AppContainer,
     pendingSessionId: StateFlow<String?> = MutableStateFlow(null),
     onSessionIdConsumed: () -> Unit = {},
+    pendingWakeCapturePath: StateFlow<String?> = MutableStateFlow(null),
+    onWakeCaptureConsumed: () -> Unit = {},
+    kioskMode: StateFlow<Boolean> = MutableStateFlow(false),
 ) {
     // Read the persisted ServerConfig once before deciding the start
     // destination; otherwise collectAsState's synchronous initial value would
@@ -65,6 +68,23 @@ fun HavenNav(
             launchSingleTop = true
         }
         onSessionIdConsumed()
+    }
+
+    // Kiosk / wake-word hand-off. When the foreground service launches us
+    // with a capture path, navigate straight to chat — resuming the last
+    // session if there is one, otherwise starting a fresh session. The
+    // composable below picks the capture path up from the same StateFlow and
+    // calls ingestWakeCapture on the ChatViewModel.
+    val pendingCapture by pendingWakeCapturePath.collectAsState()
+    val isKiosk by kioskMode.collectAsState()
+    LaunchedEffect(pendingCapture, isKiosk) {
+        if (pendingCapture == null && !isKiosk) return@LaunchedEffect
+        val lastSid = container.settings.lastSessionId()
+        val route = if (lastSid.isNullOrBlank()) "chat" else "chat?sessionId=$lastSid"
+        nav.navigate(route) {
+            popUpTo("history") { inclusive = false }
+            launchSingleTop = true
+        }
     }
 
     NavHost(navController = nav, startDestination = start) {
@@ -143,6 +163,12 @@ fun HavenNav(
                     }
                 },
             )
+            val capturePath by pendingWakeCapturePath.collectAsState()
+            LaunchedEffect(capturePath) {
+                val p = capturePath ?: return@LaunchedEffect
+                vm.ingestWakeCapture(java.io.File(p))
+                onWakeCaptureConsumed()
+            }
             ChatScreen(
                 vm = vm,
                 onBack = { nav.popBackStack() },

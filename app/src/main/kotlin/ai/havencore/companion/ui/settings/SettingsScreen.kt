@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.RecordVoiceOver
+import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -83,6 +84,7 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
     val cameraIdentifyEnabled by vm.companionCameraIdentifyEnabled.collectAsState()
     val cameraReadTextEnabled by vm.companionCameraReadTextEnabled.collectAsState()
     val cameraWhoIsInViewEnabled by vm.companionCameraWhoIsInViewEnabled.collectAsState()
+    val wallDisplayEnabled by vm.wallDisplayEnabled.collectAsState()
 
     val ctx = LocalContext.current
 
@@ -157,6 +159,11 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                 onReadTextEnabledChange = vm::setCompanionCameraReadTextEnabled,
                 whoIsInViewEnabled = cameraWhoIsInViewEnabled,
                 onWhoIsInViewEnabledChange = vm::setCompanionCameraWhoIsInViewEnabled,
+            )
+
+            WallDisplayCard(
+                enabled = wallDisplayEnabled,
+                onEnabledChange = vm::setWallDisplayEnabled,
             )
 
             NotificationsCard(
@@ -478,6 +485,35 @@ private fun CameraToolToggleRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+@Composable
+private fun WallDisplayCard(
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+) {
+    SettingsCard(
+        icon = Icons.Default.Tv,
+        title = stringResource(R.string.wall_display_card_title),
+        description = stringResource(R.string.wall_display_card_body),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.wall_display_toggle),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Switch(checked = enabled, onCheckedChange = onEnabledChange)
+        }
+        Text(
+            text = stringResource(R.string.wall_display_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

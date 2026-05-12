@@ -7,7 +7,12 @@ import ai.havencore.companion.net.ConversationsApi
 import ai.havencore.companion.push.PushManager
 import ai.havencore.companion.push.PushUi
 import ai.havencore.companion.voice.DefaultAssistantHelper
+import ai.havencore.companion.wakeword.MicrophoneForegroundService
 import android.content.Context
+import android.content.Intent
+import android.os.Build
+import android.util.Log
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -115,6 +120,32 @@ class SettingsViewModel(
 
     fun setCompanionCameraWhoIsInViewEnabled(enabled: Boolean) {
         viewModelScope.launch { repo.setCompanionCameraWhoIsInViewEnabled(enabled) }
+    }
+
+    val wallDisplayEnabled: StateFlow<Boolean> =
+        repo.wallDisplayEnabledFlow.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = false,
+        )
+
+    fun setWallDisplayEnabled(on: Boolean) {
+        viewModelScope.launch {
+            repo.setWallDisplayEnabled(on)
+            val svc = Intent(appContext, MicrophoneForegroundService::class.java)
+            runCatching {
+                if (on) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        ContextCompat.startForegroundService(appContext, svc)
+                    } else {
+                        appContext.startService(svc)
+                    }
+                } else {
+                    svc.action = MicrophoneForegroundService.ACTION_STOP
+                    appContext.startService(svc)
+                }
+            }.onFailure { Log.w("SettingsVM", "wall-display service toggle failed", it) }
+        }
     }
 
     private val _ping = MutableStateFlow<PingState>(PingState.Untested)

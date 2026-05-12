@@ -38,6 +38,9 @@ class SettingsRepository(context: Context) {
         booleanPreferencesKey("companion_camera_read_text_enabled")
     private val keyCompanionCameraWhoIsInViewEnabled =
         booleanPreferencesKey("companion_camera_who_is_in_view_enabled")
+    private val keyWallDisplayEnabled = booleanPreferencesKey("wall_display_enabled")
+    private val keyWakeWordModelAsset = stringPreferencesKey("wakeword_model_asset")
+    private val keyWakeWordThresholdMilli = longPreferencesKey("wakeword_threshold_milli")
 
     val configFlow: Flow<ServerConfig> = store.data.map { prefs ->
         ServerConfig(
@@ -179,10 +182,64 @@ class SettingsRepository(context: Context) {
         store.edit { prefs -> prefs[keyCompanionCameraWhoIsInViewEnabled] = enabled }
     }
 
+    // Wall-display / wake-word.
+    //
+    // Default OFF — phone users get the unchanged behavior. Flipping this on
+    // is the user's signal that this install is a kiosk; HavenCoreApp starts
+    // MicrophoneForegroundService on cold start when it's true.
+    val wallDisplayEnabledFlow: Flow<Boolean> =
+        store.data.map { prefs -> prefs[keyWallDisplayEnabled] ?: false }
+
+    suspend fun wallDisplayEnabled(): Boolean = wallDisplayEnabledFlow.first()
+
+    suspend fun setWallDisplayEnabled(on: Boolean) {
+        store.edit { prefs -> prefs[keyWallDisplayEnabled] = on }
+    }
+
+    // Asset filename (under assets/wakeword/) for the wake-word classifier
+    // ONNX. The lib resolves it relative to AssetManager. Configurable so the
+    // custom hey_selene.onnx can swap in by changing this string only.
+    val wakeWordModelAssetFlow: Flow<String> = store.data.map { prefs ->
+        prefs[keyWakeWordModelAsset] ?: DEFAULT_WAKEWORD_MODEL_ASSET
+    }
+
+    suspend fun setWakeWordModelAsset(asset: String) {
+        store.edit { prefs -> prefs[keyWakeWordModelAsset] = asset }
+    }
+
+    // Threshold stored as integer milli-units to keep types simple in
+    // DataStore (no floatPreferencesKey here). 50 -> 0.050f.
+    val wakeWordThresholdFlow: Flow<Float> = store.data.map { prefs ->
+        val milli = prefs[keyWakeWordThresholdMilli] ?: DEFAULT_WAKEWORD_THRESHOLD_MILLI
+        milli / 1000f
+    }
+
+    suspend fun setWakeWordThreshold(value: Float) {
+        val milli = (value * 1000f).toLong().coerceIn(1L, 1000L)
+        store.edit { prefs -> prefs[keyWakeWordThresholdMilli] = milli }
+    }
+
     companion object {
         const val DEFAULT_SILENCE_TIMEOUT_MS = 2000L
         const val MIN_SILENCE_TIMEOUT_MS = 600L
         const val MAX_SILENCE_TIMEOUT_MS = 4000L
         const val SILENCE_TIMEOUT_STEP_MS = 200L
+
+        // Phase 1.5 custom-trained model from the openWakeWord pipeline
+        // (synthetic Kokoro positives + Piper-generated hard negatives,
+        // 100% precision / 96.7% recall against held-out synth eval).
+        // Sigmoid is baked into the ONNX export so the lib's
+        // `output > threshold` compare operates directly in probability
+        // space, matching the Home Assistant / wyoming-openwakeword
+        // convention.
+        const val DEFAULT_WAKEWORD_MODEL_ASSET = "wakeword/hey_selene.onnx"
+
+        // Probability-space threshold from the corrected eval (0.420). The
+        // earlier 0.610 came from an eval script that double-applied
+        // sigmoid; the same recall/precision/FA numbers map to 0.420 once
+        // measured against the raw (already-post-sigmoid) ONNX output.
+        // Real-world recall is expected to be lower than synth eval —
+        // retune downward after the first field session.
+        const val DEFAULT_WAKEWORD_THRESHOLD_MILLI = 420L
     }
 }

@@ -32,6 +32,7 @@ class SttApi(sharedClient: OkHttpClient) {
         baseUrl: String,
         file: File,
         language: String? = null,
+        contentType: String = "audio/mp4",
     ): Result<String> = withContext(Dispatchers.IO) {
         if (baseUrl.isBlank()) {
             return@withContext Result.failure(IllegalArgumentException("Server URL is empty"))
@@ -44,7 +45,7 @@ class SttApi(sharedClient: OkHttpClient) {
             .setType(MultipartBody.FORM)
             .addFormDataPart(
                 "file", file.name,
-                file.asRequestBody("audio/mp4".toMediaType()),
+                file.asRequestBody(contentType.toMediaType()),
             )
             .also { if (!language.isNullOrBlank()) it.addFormDataPart("language", language) }
             .addFormDataPart("response_format", "json")

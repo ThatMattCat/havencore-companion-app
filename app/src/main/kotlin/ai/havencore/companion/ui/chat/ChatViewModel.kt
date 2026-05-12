@@ -242,9 +242,29 @@ class ChatViewModel(
             setVoice(VoiceUi.Idle)
             return
         }
+        runTranscribeAndSend(stopped.file, contentType = "audio/mp4")
+    }
+
+    /**
+     * Public entry point used by the wake-word foreground service hand-off:
+     * the service captures a post-wake utterance to a WAV file and the
+     * kiosk-mode activity routes it here. Mirrors the PTT path so the same
+     * voice-state UI applies. Caller owns the file lifecycle — we transcribe
+     * in place and leave deletion to the cache pruner.
+     */
+    fun ingestWakeCapture(wavFile: java.io.File) {
+        if (!wavFile.exists() || wavFile.length() <= 0) {
+            setVoiceError("Capture file missing")
+            return
+        }
+        setVoice(VoiceUi.Transcribing)
+        runTranscribeAndSend(wavFile, contentType = "audio/wav")
+    }
+
+    private fun runTranscribeAndSend(file: java.io.File, contentType: String) {
         viewModelScope.launch {
             val cfg = settings.configFlow.first()
-            val result = sttApi.transcribe(cfg.baseUrl, stopped.file)
+            val result = sttApi.transcribe(cfg.baseUrl, file, contentType = contentType)
             result.fold(
                 onSuccess = { text ->
                     if (text.isBlank()) {

@@ -1,4 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.HavenCoreCompanion" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!--
+        Wall-display kiosk theme. MainActivity applies this dynamically (via
+        setTheme before super.onCreate) when launched with EXTRA_KIOSK=true.
+        Fullscreen + edge-to-edge with cutout passthrough; the immersive
+        system-bar hide is applied imperatively in MainActivity so a runtime
+        toggle can flip it without recreating the activity.
+    -->
+    <style name="Theme.HavenCoreCompanion.Kiosk" parent="Theme.HavenCoreCompanion">
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:windowTranslucentStatus">true</item>
+        <item name="android:windowTranslucentNavigation">true</item>
+    </style>
 </resources>
