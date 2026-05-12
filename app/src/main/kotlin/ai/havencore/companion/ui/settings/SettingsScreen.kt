@@ -57,7 +57,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -85,6 +87,7 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
     val cameraReadTextEnabled by vm.companionCameraReadTextEnabled.collectAsState()
     val cameraWhoIsInViewEnabled by vm.companionCameraWhoIsInViewEnabled.collectAsState()
     val wallDisplayEnabled by vm.wallDisplayEnabled.collectAsState()
+    val wakeWordThreshold by vm.wakeWordThreshold.collectAsState()
 
     val ctx = LocalContext.current
 
@@ -164,6 +167,8 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
             WallDisplayCard(
                 enabled = wallDisplayEnabled,
                 onEnabledChange = vm::setWallDisplayEnabled,
+                threshold = wakeWordThreshold,
+                onThresholdChange = vm::setWakeWordThreshold,
             )
 
             NotificationsCard(
@@ -492,6 +497,8 @@ private fun CameraToolToggleRow(
 private fun WallDisplayCard(
     enabled: Boolean,
     onEnabledChange: (Boolean) -> Unit,
+    threshold: Float,
+    onThresholdChange: (Float) -> Unit,
 ) {
     SettingsCard(
         icon = Icons.Default.Tv,
@@ -511,6 +518,23 @@ private fun WallDisplayCard(
         }
         Text(
             text = stringResource(R.string.wall_display_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        var sliderValue by remember(threshold) { mutableFloatStateOf(threshold) }
+        Text(
+            text = "Detection threshold %.2f".format(sliderValue),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Slider(
+            value = sliderValue,
+            onValueChange = { sliderValue = it },
+            onValueChangeFinished = { onThresholdChange(sliderValue) },
+            valueRange = 0.15f..0.80f,
+            steps = 12,
+        )
+        Text(
+            text = "Lower = easier to wake, more false triggers.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

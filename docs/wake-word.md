@@ -154,6 +154,28 @@ milli-units (`wakeword_threshold_milli`, default `420`) to avoid a
 `floatPreferencesKey`. Tune downward after the first field session;
 synth eval recall is optimistic vs. real-room conditions.
 
+Exposed as a Slider in the wall-display Settings card (`ui/settings/
+SettingsScreen.kt` `WallDisplayCard`). Range 0.15–0.80, step 0.05.
+The slider commits to DataStore only on `onValueChangeFinished` so
+the engine doesn't restart on every drag tick.
+`MicrophoneForegroundService.runControllerLifecycle` observes the
+`wakeWordThresholdFlow` via `collectLatest` and rebuilds the
+`WakeWordController` on each new value — the threshold is baked into
+`WakeWordController.Config` at construction so a fresh controller is
+the cleanest way to apply the change. Teardown awaits the controller's
+`Event.Stopped` (with a 500 ms timeout cap) before the next rebuild,
+to avoid the new engine racing the old one for the mic.
+
+Score-to-volume coupling is steep — openWakeWord confidence varies
+with input loudness, so a phrase that scores 0.95 spoken close-mic can
+score 0.30–0.45 spoken from across a room. Tune per device geometry:
+handheld near-field stays fine at 0.42, a wall-mounted tablet at
+viewing distance typically needs 0.25–0.30. The slider lets you
+calibrate without a rebuild. See `memory/wakeword_gain_options.md`
+for the open question of adding actual mic-gain control (deferred —
+the openwakeword lib owns the AudioRecord end-to-end, so this needs
+either reflection-based AGC/NoiseSuppressor attachment or a fork).
+
 ## Capture endpointing
 
 `WakeCaptureSession` reads 16 kHz mono PCM-16 from

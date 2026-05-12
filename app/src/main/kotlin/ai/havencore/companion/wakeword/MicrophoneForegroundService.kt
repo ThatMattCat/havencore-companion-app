@@ -17,8 +17,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.Locale
 
@@ -42,6 +46,7 @@ class MicrophoneForegroundService : Service() {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var controller: WakeWordController? = null
     private var eventJob: Job? = null
+    private var threshJob: Job? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -49,7 +54,7 @@ class MicrophoneForegroundService : Service() {
         super.onCreate()
         WakeWordChannel.register(this)
         startForegroundCompat()
-        scope.launch { bootController() }
+        threshJob = scope.launch { runControllerLifecycle() }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -60,23 +65,50 @@ class MicrophoneForegroundService : Service() {
         return START_STICKY
     }
 
-    private suspend fun bootController() {
+    private suspend fun runControllerLifecycle() {
         val app = applicationContext as HavenCoreApp
         val settings = app.container.settings
-        val modelAsset = settings.wakeWordModelAssetFlow.first()
-        val threshold = settings.wakeWordThresholdFlow.first()
-        val captureDir = File(applicationContext.cacheDir, "wake-captures")
-        val cfg = WakeWordController.Config(
-            modelAssetPath = modelAsset,
-            threshold = threshold,
-            captureOutDir = captureDir,
-        )
-        val c = WakeWordController(applicationContext, cfg)
-        controller = c
-        eventJob = scope.launch {
-            c.events.collect { ev -> handleEvent(ev) }
+        // collectLatest rebuilds the controller on each new threshold value.
+        // If the user changes threshold while a capture is in flight, the
+        // current block is cancelled mid-capture; teardown stops the engine
+        // and the next block constructs a fresh controller with the new
+        // threshold. The user re-triggers wake to test the new value.
+        settings.wakeWordThresholdFlow
+            .distinctUntilChanged()
+            .collectLatest { threshold ->
+                val modelAsset = settings.wakeWordModelAssetFlow.first()
+                val captureDir = File(applicationContext.cacheDir, "wake-captures")
+                val cfg = WakeWordController.Config(
+                    modelAssetPath = modelAsset,
+                    threshold = threshold,
+                    captureOutDir = captureDir,
+                )
+                val c = WakeWordController(applicationContext, cfg)
+                controller = c
+                val localEventJob = scope.launch {
+                    c.events.collect { ev -> handleEvent(ev) }
+                }
+                eventJob = localEventJob
+                c.start()
+                try {
+                    awaitCancellation()
+                } finally {
+                    teardownController(c, localEventJob)
+                }
+            }
+    }
+
+    private suspend fun teardownController(c: WakeWordController, ev: Job) {
+        c.stop()
+        // Wait for the controller's async stop() to finish releasing the mic
+        // before letting collectLatest start a fresh controller — otherwise
+        // the new engine can race the old one for AudioRecord.
+        withTimeoutOrNull(STOP_GRACE_MS) {
+            c.events.first { it is WakeWordController.Event.Stopped }
         }
-        c.start()
+        ev.cancel()
+        if (controller === c) controller = null
+        if (eventJob === ev) eventJob = null
     }
 
     private fun handleEvent(ev: WakeWordController.Event) {
@@ -189,15 +221,17 @@ class MicrophoneForegroundService : Service() {
     }
 
     override fun onDestroy() {
-        eventJob?.cancel()
-        controller?.stop()
-        controller = null
+        // Cancelling threshJob triggers the collectLatest finally-clause,
+        // which calls teardownController and stops the engine cleanly.
+        threshJob?.cancel()
+        threshJob = null
         super.onDestroy()
     }
 
     companion object {
         private const val TAG = "WakeWord:Svc"
         private const val NOTIF_ID = 0x57414b45 // "WAKE"
+        private const val STOP_GRACE_MS = 500L
 
         const val ACTION_STOP = "ai.havencore.companion.wakeword.STOP"
         const val EXTRA_KIOSK = "kiosk_mode"

@@ -148,6 +148,17 @@ class SettingsViewModel(
         }
     }
 
+    val wakeWordThreshold: StateFlow<Float> =
+        repo.wakeWordThresholdFlow.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = SettingsRepository.DEFAULT_WAKEWORD_THRESHOLD_MILLI / 1000f,
+        )
+
+    fun setWakeWordThreshold(value: Float) {
+        viewModelScope.launch { repo.setWakeWordThreshold(value) }
+    }
+
     private val _ping = MutableStateFlow<PingState>(PingState.Untested)
     val ping: StateFlow<PingState> = _ping.asStateFlow()
 
