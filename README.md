@@ -309,9 +309,10 @@ Capabilities not yet shipped:
   next step.
 - **Lock-task / true kiosk pinning** for the docked-tablet scenario.
   The current "kiosk mode" flips fullscreen + show-when-locked +
-  screen-on but doesn't pin the activity over the launcher. Will be
-  wired alongside boot-completed autostart when the Lenovo Tab M11
-  arrives.
+  screen-on but doesn't pin the activity over the launcher. The M11
+  install runs as a soft kiosk (boot-completed autostart and
+  battery-optimization exemption are wired; lock-task is not, and
+  isn't needed when the tablet is physically out of reach).
 - **Todo / shopping list** — pending the agent-side `todo.*` MCP
   tools.
 - **Reverse-proxy auth** — pending agent-side support; useful when

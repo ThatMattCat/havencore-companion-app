@@ -16,14 +16,10 @@ import ai.havencore.companion.push.DeviceIdProvider
 import ai.havencore.companion.push.PushChannel
 import ai.havencore.companion.push.PushManager
 import ai.havencore.companion.push.PushNotifier
-import ai.havencore.companion.wakeword.MicrophoneForegroundService
+import ai.havencore.companion.wakeword.WakeWordAutostart
 import ai.havencore.companion.wakeword.WakeWordChannel
 import android.app.Application
 import android.content.Context
-import android.content.Intent
-import android.os.Build
-import android.util.Log
-import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -40,26 +36,7 @@ class HavenCoreApp : Application() {
         container = AppContainer(this)
         PushChannel.register(this)
         WakeWordChannel.register(this)
-        maybeStartWakeWordService()
-    }
-
-    // Wall-display mode: if the user opted in, start the foreground mic
-    // service on app boot. Phone installs with the toggle off stay
-    // unchanged. On a docked tablet the OS restarts our process across
-    // reboots, so this is sufficient without a BOOT_COMPLETED receiver.
-    private fun maybeStartWakeWordService() {
-        appScope.launch {
-            val enabled = container.settings.wallDisplayEnabled()
-            if (!enabled) return@launch
-            val intent = Intent(this@HavenCoreApp, MicrophoneForegroundService::class.java)
-            runCatching {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    ContextCompat.startForegroundService(this@HavenCoreApp, intent)
-                } else {
-                    startService(intent)
-                }
-            }.onFailure { Log.w("HavenCoreApp", "wake-word service autostart failed", it) }
-        }
+        appScope.launch { WakeWordAutostart.maybeStart(this@HavenCoreApp) }
     }
 }
 

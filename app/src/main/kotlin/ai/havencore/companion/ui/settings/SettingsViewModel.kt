@@ -7,6 +7,7 @@ import ai.havencore.companion.net.ConversationsApi
 import ai.havencore.companion.push.PushManager
 import ai.havencore.companion.push.PushUi
 import ai.havencore.companion.voice.DefaultAssistantHelper
+import ai.havencore.companion.wakeword.BatteryOptHelper
 import ai.havencore.companion.wakeword.MicrophoneForegroundService
 import android.content.Context
 import android.content.Intent
@@ -165,6 +166,9 @@ class SettingsViewModel(
     private val _isAssistantHeld = MutableStateFlow(DefaultAssistantHelper.isHeld(appContext))
     val isAssistantHeld: StateFlow<Boolean> = _isAssistantHeld.asStateFlow()
 
+    private val _isBatteryOptIgnored = MutableStateFlow(BatteryOptHelper.isIgnoring(appContext))
+    val isBatteryOptIgnored: StateFlow<Boolean> = _isBatteryOptIgnored.asStateFlow()
+
     private val refresh = MutableStateFlow(0)
 
     val pushUi: StateFlow<PushUi> = combine(
@@ -190,9 +194,14 @@ class SettingsViewModel(
         _isAssistantHeld.value = DefaultAssistantHelper.isHeld(appContext)
     }
 
+    fun refreshBatteryOptIgnored() {
+        _isBatteryOptIgnored.value = BatteryOptHelper.isIgnoring(appContext)
+    }
+
     fun onResume() {
         refresh.value++
         refreshAssistantHeld()
+        refreshBatteryOptIgnored()
     }
 
     fun togglePush(on: Boolean) {

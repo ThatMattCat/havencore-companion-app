@@ -10,6 +10,7 @@ import ai.havencore.companion.ui.components.Banner
 import ai.havencore.companion.ui.components.BannerSeverity
 import ai.havencore.companion.ui.theme.HavenTokens
 import ai.havencore.companion.voice.DefaultAssistantHelper
+import ai.havencore.companion.wakeword.BatteryOptHelper
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -88,6 +89,7 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
     val cameraWhoIsInViewEnabled by vm.companionCameraWhoIsInViewEnabled.collectAsState()
     val wallDisplayEnabled by vm.wallDisplayEnabled.collectAsState()
     val wakeWordThreshold by vm.wakeWordThreshold.collectAsState()
+    val batteryOptIgnored by vm.isBatteryOptIgnored.collectAsState()
 
     val ctx = LocalContext.current
 
@@ -169,6 +171,10 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                 onEnabledChange = vm::setWallDisplayEnabled,
                 threshold = wakeWordThreshold,
                 onThresholdChange = vm::setWakeWordThreshold,
+                batteryOptIgnored = batteryOptIgnored,
+                onRequestBatteryOpt = {
+                    runCatching { ctx.startActivity(BatteryOptHelper.requestIntent(ctx)) }
+                },
             )
 
             NotificationsCard(
@@ -499,6 +505,8 @@ private fun WallDisplayCard(
     onEnabledChange: (Boolean) -> Unit,
     threshold: Float,
     onThresholdChange: (Float) -> Unit,
+    batteryOptIgnored: Boolean,
+    onRequestBatteryOpt: () -> Unit,
 ) {
     SettingsCard(
         icon = Icons.Default.Tv,
@@ -538,6 +546,50 @@ private fun WallDisplayCard(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        BatteryOptRow(
+            ignored = batteryOptIgnored,
+            onRequest = onRequestBatteryOpt,
+        )
+    }
+}
+
+@Composable
+private fun BatteryOptRow(
+    ignored: Boolean,
+    onRequest: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = HavenTokens.Spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.md),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.battery_opt_row_title),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = stringResource(
+                    if (ignored) R.string.battery_opt_row_body_on
+                    else R.string.battery_opt_row_body_off,
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (ignored) {
+            Text(
+                text = stringResource(R.string.battery_opt_row_granted),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        } else {
+            Button(onClick = onRequest) {
+                Text(stringResource(R.string.battery_opt_row_action))
+            }
+        }
     }
 }
 

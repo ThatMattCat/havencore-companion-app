@@ -371,18 +371,25 @@ kiosk path despite a healthy server, the diagnostic question is
 "did `ws.connect kicked off` fire before the user expected it to" —
 not "is the server reachable".
 
-### Samsung battery optimization
+### Battery optimization + boot autostart
 
-Not blocking on the test bench yet, but worth flagging for the
-tablet. Samsung One UI aggressively kills background processes. A
-foreground service with a sticky notification _should_ survive, but
-if the user force-stops the app or the device enters a long deep-doze
-cycle, the service can die. There's no internal restart mechanism
-beyond `Application.onCreate`'s autostart (which only runs when the
-OS restarts our process, e.g. after reboot). On the tablet we'll
-likely need a `BOOT_COMPLETED` receiver and a battery-optimization
-exemption flow in Settings, equivalent to the ntfy guidance in the
-Notifications card.
+Doze and adaptive battery will throttle or suspend the mic foreground
+service after a few hours idle on stock Android, and much faster on
+Samsung / Lenovo OEM skins. The Settings wall-display card now
+surfaces an "Ignore battery optimizations" row that reads
+`PowerManager.isIgnoringBatteryOptimizations` and, on tap, fires
+`Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` for a one-tap
+allow dialog. The status re-checks on `ON_RESUME` so the row updates
+when the user returns from the system dialog.
+
+Autostart-after-reboot is handled by `wakeword.BootReceiver`, which
+listens for `ACTION_BOOT_COMPLETED` and calls
+`WakeWordAutostart.maybeStart(context)` — the same entry point
+`HavenCoreApp.onCreate` uses for warm starts. The receiver uses
+`goAsync()` so the DataStore read for `wallDisplayEnabled()` can
+suspend without ANR. On a Lenovo / MediaTek-skin OEM you may still
+need to enable the app's "Auto-start" toggle in the OEM app-manager —
+no manifest permission can override that.
 
 ## What's intentionally not built
 
@@ -396,13 +403,11 @@ Notifications card.
   silence watcher does inside a single round trip.
 - **Lock-task / true pinning** for the docked-tablet scenario.
   Pinning the kiosk chat over the launcher so a user can't
-  accidentally back out. Out of scope until the M11 arrives.
+  accidentally back out. Deliberately not wired — the M11 install
+  is a soft kiosk (physically out of casual reach), and Device
+  Owner provisioning would require a factory reset.
 - **VOICE_COMMUNICATION-mode capture** for echo cancellation during
   TTS playback. With the room satellite scenario (small speaker
   next to the mic), the wake-listener will hear its own TTS — we
   may want to mute the engine during `TtsPlayer.state in {Loading,
   Playing}` rather than route through AEC.
-- **Boot-completed autostart.** `Application.onCreate` is sufficient
-  on phones that restart our process across reboots; the tablet
-  may want an explicit `BOOT_COMPLETED` receiver if the OS is
-  more conservative about restarting backgrounded apps.

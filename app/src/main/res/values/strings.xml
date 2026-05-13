@@ -26,4 +26,10 @@
     <string name="wall_display_card_body">Turn this tablet into an always-listening room satellite. Starts a foreground microphone service that runs the local wake-word detector and, on detection, pops the chat screen in fullscreen over your launcher.</string>
     <string name="wall_display_toggle">Enable wall-display mode</string>
     <string name="wall_display_hint">Drop the wake-word ONNX, melspectrogram.onnx, embedding_model.onnx, and silero_vad.onnx into app/src/main/assets/wakeword/ before flashing.</string>
+
+    <string name="battery_opt_row_title">Ignore battery optimizations</string>
+    <string name="battery_opt_row_body_off">Doze will throttle the mic service after a few hours idle. Tap to open the system page and allow HavenCore to run unrestricted.</string>
+    <string name="battery_opt_row_body_on">Granted. The mic service can run unrestricted in the background.</string>
+    <string name="battery_opt_row_action">Allow</string>
+    <string name="battery_opt_row_granted">Granted</string>
 </resources>
