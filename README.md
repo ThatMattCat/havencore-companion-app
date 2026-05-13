@@ -54,13 +54,14 @@ and `ANDROID_HOME` set. Output APK lands at
 
 ## Day-to-day dev loop — Wireless ADB from a Linux build host
 
-The primary workflow: build on a Linux server, push to the phone over
-Wireless ADB on the LAN. `scripts/adb-env.sh` handles environment setup
-and phone discovery; source it once per shell.
+The primary workflow: build on a Linux server, push to the phone (or
+the docked wall-display tablet) over Wireless ADB on the LAN.
+`scripts/adb-env.sh` handles environment setup and device discovery;
+source it once per shell.
 
 ### One-time pairing (Android 11+)
 
-1. Phone → Settings → Developer options → **Wireless debugging** → On
+1. Device → Settings → Developer options → **Wireless debugging** → On
 2. Tap **Pair device with pairing code** (the modal — _not_ the main
    screen's IP & Port; those are different). Note the pair `host:port`
    and 6-digit code.
@@ -69,22 +70,29 @@ and phone discovery; source it once per shell.
    adb pair <pair-host:port>   # then enter the 6-digit code
    ```
 
-Pairing persists across phone reboots; you only repeat it if the phone
-is wiped or the server's adb keys change.
+Pairing persists across reboots; you only repeat it if the device is
+wiped or the server's adb keys change. Repeat for each device you want
+to target (the phone, the wall-display tablet, etc).
 
 ### Each shell session
 
 ```bash
 source scripts/adb-env.sh                                     # PATHs + mDNS-discover + adb connect
-./gradlew installDebug                                        # build + push to phone
+./gradlew installDebug                                        # build + push
 adb shell am start -n ai.havencore.companion/.MainActivity    # launch
 adb logcat | grep -i 'havencore\|ChatWs\|ChatVM\|MicRec\|TtsPlay\|Voice:VIS\|Voice:Sess\|Push:Recv\|Push:Reg\|Push:Api\|DeviceAction\|CaptureActivity\|WakeWord'   # tail logs
 ```
 
-The phone's _connect_ port (separate from the pair port) rotates every
-time Wireless debugging is toggled or the phone reboots. The helper
-script auto-discovers it via mDNS — no need to hardcode. If mDNS is
-blocked on your network, override:
+The _connect_ port (separate from the pair port) rotates every time
+Wireless debugging is toggled or the device reboots. The helper script
+auto-discovers it via mDNS — no need to hardcode.
+
+If more than one device is paired, the script lists them by product
+model and asks you to pick one in interactive shells, then disconnects
+the unselected transports so `installDebug` doesn't bail with "more
+than one device/emulator". Non-interactive shells fall back to the
+first mDNS match; pin the target explicitly with `PHONE_HOST` if that
+matters. The same override unblocks mDNS-blocked networks:
 
 ```bash
 PHONE_HOST=10.0.0.115:39961 source scripts/adb-env.sh

@@ -53,31 +53,37 @@ Versions pinned in `gradle/libs.versions.toml`. Lint flags newer
 
 ## Day-to-day dev loop — Wireless ADB
 
-Build host is this Linux server. Test device is the user's Android
-phone on the same LAN, paired once via Wireless debugging. The connect
-port rotates each time Wireless debugging is toggled or the phone
-reboots; the helper script discovers it via mDNS so most days you never
-touch IPs.
+Build host is this Linux server. Test devices are the user's Android
+phone and (for wall-display work) a docked tablet, each paired once via
+Wireless debugging. The connect port rotates each time Wireless
+debugging is toggled or a device reboots; the helper script discovers
+paired devices via mDNS so most days you never touch IPs.
 
 ```bash
 source scripts/adb-env.sh        # PATHs + mDNS-discover + adb connect
-./gradlew installDebug           # build + push to phone in one step
+./gradlew installDebug           # build + push in one step
 adb shell am start -n ai.havencore.companion/.MainActivity
 adb logcat | grep -i 'havencore\|ChatWs\|ChatVM\|MicRec\|TtsPlay\|Voice:VIS\|Voice:Sess\|Push:Recv\|Push:Reg\|Push:Api\|WakeWord'   # tail logs
 ```
 
-Override discovery if mDNS is blocked:
-`PHONE_HOST=10.0.0.115:39961 source scripts/adb-env.sh`.
+If multiple devices are paired (phone + wall-display tablet is the
+common case), the script lists them by `ro.product.model` and prompts
+for a pick in interactive shells, then disconnects the unselected
+transports so `installDebug` sees a single device. Non-interactive
+shells fall back to the first mDNS match — pin the target explicitly
+with `PHONE_HOST=<ip:port> source scripts/adb-env.sh` to avoid pushing
+to the wrong device. The same override unblocks mDNS-blocked networks.
 
 Pairing persists across reboots — only re-pair (`adb pair <ip:pair-port>`
-with the 6-digit code from the phone) if the phone is wiped or the
-server's adb keys change. Full one-time-pairing instructions in
-`README.md`.
+with the 6-digit code from the device) if it's wiped or the server's
+adb keys change. Full one-time-pairing instructions in `README.md`.
 
-If `adb devices` shows two transports for the same phone (mDNS alias
+If `adb devices` shows two transports for the same device (mDNS alias
 plus a stale `ip:port`), `adb disconnect <ip:port>` to drop the
 duplicate before running `am start` / `installDebug` — otherwise adb
-refuses with "more than one device/emulator".
+refuses with "more than one device/emulator". The picker handles
+*cross-device* duplicates; same-device duplicates still need a manual
+disconnect.
 
 ## Toolchain locations on the build host
 
@@ -314,7 +320,7 @@ unicode.
 
 - First build on a fresh host pulls the AGP/Compose dependency graph
   (hundreds of MB). Subsequent Compose-only builds finish in <30s.
-- After phone reboots, re-source `scripts/adb-env.sh` — the connect
+- After a device reboots, re-source `scripts/adb-env.sh` — the connect
   port rotates.
 - `installDebug` requires the phone to be unlocked when the activity
   launches or lifecycle starts can cancel.
