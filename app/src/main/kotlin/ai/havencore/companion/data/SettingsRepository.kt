@@ -41,6 +41,8 @@ class SettingsRepository(context: Context) {
     private val keyWallDisplayEnabled = booleanPreferencesKey("wall_display_enabled")
     private val keyWakeWordModelAsset = stringPreferencesKey("wakeword_model_asset")
     private val keyWakeWordThresholdMilli = longPreferencesKey("wakeword_threshold_milli")
+    private val keyAvatarOverlayEnabled = booleanPreferencesKey("avatar_overlay_enabled")
+    private val keyAvatarIdleTimeoutMs = longPreferencesKey("avatar_idle_timeout_ms")
 
     val configFlow: Flow<ServerConfig> = store.data.map { prefs ->
         ServerConfig(
@@ -219,6 +221,32 @@ class SettingsRepository(context: Context) {
         store.edit { prefs -> prefs[keyWakeWordThresholdMilli] = milli }
     }
 
+    // Live2D avatar overlay. When on, MicrophoneForegroundService routes
+    // detected wake-utterances to AvatarOverlayService (overlay-on-HA path)
+    // instead of MainActivity (legacy fullscreen-chat path).
+    //
+    // Default-on: wall_display tablets are the only realistic install where
+    // an overlay is desirable; phones can opt out via the Settings toggle.
+    val avatarOverlayEnabledFlow: Flow<Boolean> =
+        store.data.map { prefs -> prefs[keyAvatarOverlayEnabled] ?: true }
+
+    suspend fun avatarOverlayEnabled(): Boolean = avatarOverlayEnabledFlow.first()
+
+    suspend fun setAvatarOverlayEnabled(on: Boolean) {
+        store.edit { prefs -> prefs[keyAvatarOverlayEnabled] = on }
+    }
+
+    val avatarIdleTimeoutMsFlow: Flow<Long> = store.data.map { prefs ->
+        prefs[keyAvatarIdleTimeoutMs] ?: DEFAULT_AVATAR_IDLE_TIMEOUT_MS
+    }
+
+    suspend fun avatarIdleTimeoutMs(): Long = avatarIdleTimeoutMsFlow.first()
+
+    suspend fun setAvatarIdleTimeoutMs(ms: Long) {
+        val clamped = ms.coerceIn(MIN_AVATAR_IDLE_TIMEOUT_MS, MAX_AVATAR_IDLE_TIMEOUT_MS)
+        store.edit { prefs -> prefs[keyAvatarIdleTimeoutMs] = clamped }
+    }
+
     companion object {
         const val DEFAULT_SILENCE_TIMEOUT_MS = 2000L
         const val MIN_SILENCE_TIMEOUT_MS = 600L
@@ -241,5 +269,10 @@ class SettingsRepository(context: Context) {
         // Real-world recall is expected to be lower than synth eval —
         // retune downward after the first field session.
         const val DEFAULT_WAKEWORD_THRESHOLD_MILLI = 420L
+
+        const val DEFAULT_AVATAR_IDLE_TIMEOUT_MS = 8_000L
+        const val MIN_AVATAR_IDLE_TIMEOUT_MS = 3_000L
+        const val MAX_AVATAR_IDLE_TIMEOUT_MS = 30_000L
+        const val AVATAR_IDLE_TIMEOUT_STEP_MS = 1_000L
     }
 }

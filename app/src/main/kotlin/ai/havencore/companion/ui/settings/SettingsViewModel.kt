@@ -7,6 +7,7 @@ import ai.havencore.companion.net.ConversationsApi
 import ai.havencore.companion.push.PushManager
 import ai.havencore.companion.push.PushUi
 import ai.havencore.companion.voice.DefaultAssistantHelper
+import ai.havencore.companion.voice.avatar.OverlayPermHelper
 import ai.havencore.companion.wakeword.BatteryOptHelper
 import ai.havencore.companion.wakeword.MicrophoneForegroundService
 import android.content.Context
@@ -160,6 +161,36 @@ class SettingsViewModel(
         viewModelScope.launch { repo.setWakeWordThreshold(value) }
     }
 
+    val avatarOverlayEnabled: StateFlow<Boolean> =
+        repo.avatarOverlayEnabledFlow.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = true,
+        )
+
+    fun setAvatarOverlayEnabled(on: Boolean) {
+        viewModelScope.launch { repo.setAvatarOverlayEnabled(on) }
+    }
+
+    val avatarIdleTimeoutMs: StateFlow<Long> =
+        repo.avatarIdleTimeoutMsFlow.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = SettingsRepository.DEFAULT_AVATAR_IDLE_TIMEOUT_MS,
+        )
+
+    fun setAvatarIdleTimeoutMs(ms: Long) {
+        viewModelScope.launch { repo.setAvatarIdleTimeoutMs(ms) }
+    }
+
+    private val _isOverlayPermGranted =
+        MutableStateFlow(OverlayPermHelper.canDrawOverlays(appContext))
+    val isOverlayPermGranted: StateFlow<Boolean> = _isOverlayPermGranted.asStateFlow()
+
+    fun refreshOverlayPermGranted() {
+        _isOverlayPermGranted.value = OverlayPermHelper.canDrawOverlays(appContext)
+    }
+
     private val _ping = MutableStateFlow<PingState>(PingState.Untested)
     val ping: StateFlow<PingState> = _ping.asStateFlow()
 
@@ -202,6 +233,7 @@ class SettingsViewModel(
         refresh.value++
         refreshAssistantHeld()
         refreshBatteryOptIgnored()
+        refreshOverlayPermGranted()
     }
 
     fun togglePush(on: Boolean) {

@@ -6,6 +6,11 @@ detection, captures the user's request, opens chat in fullscreen
 kiosk mode, transcribes the utterance, and sends it on the same
 `/ws/chat` socket the rest of the app uses.
 
+> On tablet installs with the avatar-overlay toggle on (default), the
+> wake handoff routes through `AvatarOverlayService` instead of the
+> fullscreen chat-screen popup. See [`avatar-overlay.md`](avatar-overlay.md)
+> for that path's architecture, JS bridge contract, and asset layout.
+
 Opt-in via **Settings → Wall-display mode → Enable wall-display mode**.
 Default off — phone users get the unchanged behavior. Intended for a
 docked tablet (Lenovo Tab M11 in our case) that lives on a shelf and

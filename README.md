@@ -197,6 +197,24 @@ See [`docs/wake-word.md`](docs/wake-word.md) for the full
 architecture, the Galaxy S24 silent-handoff workaround, diagnostic
 log tags, and the kiosk theme + activity-launch contract.
 
+### Avatar overlay (wall-display tablet only)
+
+On wall-display installs (default-on under the wall-display master
+toggle), the wake handoff no longer pops a fullscreen chat screen.
+Instead a Live2D avatar (placeholder model: Hiyori) floats on top
+of HA via a `SYSTEM_ALERT_WINDOW` overlay, runs the same STT → LLM →
+TTS turn inline, lip-syncs against a server-supplied Rhubarb viseme
+timeline, and dismisses ~8 s after the last activity. HA touch input
+passes through (FLAG_NOT_TOUCHABLE).
+
+Two open issues at handoff: Hiyori renders semi-transparent against
+the overlay (alpha compositing — multiple PIXI + WebView + window
+flag fixes attempted), and the lip-sync timeline arrival on a real
+wake-fire is unverified end-to-end (the server contract passed curl).
+See [`docs/avatar-overlay.md`](docs/avatar-overlay.md) for the full
+architecture, JS bridge contract, asset layout, debug triggers, and
+the punch list of what's been tried.
+
 ### Device actions
 
 Some user requests are best satisfied by an Android Intent or a

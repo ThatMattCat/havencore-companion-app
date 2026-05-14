@@ -13,11 +13,14 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -49,8 +52,18 @@ class TtsPlayer(private val ctx: Context) {
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state.asStateFlow()
 
+    /**
+     * Poll-driven playback position in milliseconds. Updated at ~50 Hz only
+     * while [state] is [State.Playing] (no background ticking when idle, so
+     * this is cheap to keep around). Consumed by the avatar overlay's
+     * [VisemeScheduler] to align mouth shapes to audio time.
+     */
+    private val _currentPositionMs = MutableStateFlow(0L)
+    val currentPositionMs: StateFlow<Long> = _currentPositionMs.asStateFlow()
+
     private val mainHandler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var positionPollJob: Job? = null
 
     private val player: ExoPlayer = ExoPlayer.Builder(ctx)
         .setAudioAttributes(
@@ -67,10 +80,14 @@ class TtsPlayer(private val ctx: Context) {
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     when (playbackState) {
                         Player.STATE_READY -> {
-                            if (p.playWhenReady) _state.value = State.Playing
+                            if (p.playWhenReady) {
+                                _state.value = State.Playing
+                                startPositionPoll()
+                            }
                         }
                         Player.STATE_ENDED -> {
                             _state.value = State.Idle
+                            stopPositionPoll()
                         }
                         Player.STATE_BUFFERING, Player.STATE_IDLE -> {
                             // Loading/Idle are driven by play() / stop() entry points.
@@ -119,7 +136,24 @@ class TtsPlayer(private val ctx: Context) {
             }
             player.clearMediaItems()
             _state.value = State.Idle
+            stopPositionPoll()
         }
+    }
+
+    private fun startPositionPoll() {
+        if (positionPollJob?.isActive == true) return
+        positionPollJob = scope.launch {
+            while (isActive) {
+                _currentPositionMs.value = player.currentPosition.coerceAtLeast(0)
+                delay(POSITION_POLL_INTERVAL_MS)
+            }
+        }
+    }
+
+    private fun stopPositionPoll() {
+        positionPollJob?.cancel()
+        positionPollJob = null
+        _currentPositionMs.value = 0L
     }
 
     fun release() {
@@ -154,5 +188,6 @@ class TtsPlayer(private val ctx: Context) {
     private companion object {
         const val TAG = "TtsPlay"
         const val ONE_HOUR_MS = 60L * 60L * 1000L
+        const val POSITION_POLL_INTERVAL_MS = 20L  // ~50 Hz
     }
 }

@@ -9,6 +9,8 @@
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
@@ -92,6 +94,22 @@
             android:name=".wakeword.MicrophoneForegroundService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <service
+            android:name=".wakeword.AvatarOverlayService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <!-- Debug-only adb trigger for the avatar overlay; see
+             AvatarOverlayDebugReceiver for the broadcast command. -->
+        <receiver
+            android:name=".wakeword.AvatarOverlayDebugReceiver"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="ai.havencore.companion.avatar.DEBUG_SHOW" />
+            </intent-filter>
+        </receiver>
 
         <receiver
             android:name=".wakeword.BootReceiver"

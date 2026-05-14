@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
+<title>HavenCore avatar</title>
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
+  body { -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+  /* WebView + TYPE_APPLICATION_OVERLAY + transparent canvas: if the
+     canvas element has no CSS background, the WebGL layer composites at
+     alpha=0 against the overlay window — Hiyori and any PIXI Graphics
+     become invisible despite rendering correctly. A near-zero alpha CSS
+     bg keeps the WebGL surface in the visible compositor layer without
+     visually tinting HA underneath. */
+  #stage { display: block; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 0; background: rgba(0, 0, 0, 0.01); }
+  #caption {
+    position: fixed; left: 50%; bottom: 8px; transform: translateX(-50%);
+    max-width: 80vw; padding: 6px 12px; border-radius: 14px;
+    background: rgba(0, 0, 0, 0.55); color: #fff;
+    font: 14px/1.3 -apple-system, system-ui, sans-serif;
+    text-align: center; pointer-events: none;
+    opacity: 0; transition: opacity 220ms ease;
+  }
+  #caption.visible { opacity: 1; }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<div id="caption" aria-hidden="true"></div>
+
+<script src="runtime/live2dcubismcore.min.js"></script>
+<script src="runtime/pixi.min.js"></script>
+<script src="runtime/cubism4.min.js"></script>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- Android bridge helpers ----------
+  const ANDROID = (typeof AndroidAvatar !== "undefined") ? AndroidAvatar : null;
+  function bridge(method) {
+    const args = Array.prototype.slice.call(arguments, 1);
+    if (ANDROID && typeof ANDROID[method] === "function") {
+      try { ANDROID[method].apply(ANDROID, args); } catch (e) { console.error("bridge " + method, e); }
+    } else {
+      console.log("[bridge stub]", method, args);
+    }
+  }
+
+  // ---------- State ----------
+  let app = null;
+  let model = null;
+  let currentPhase = "idle";          // idle | listening | thinking | speaking | error
+  let currentExpression = "neutral";  // soft no-op without exp3 files; reserved for v2 affect hook
+  let mouthOpenY = 0.0;               // 0..1
+  let mouthForm = 0.0;                // -1..1
+  let mouthFormSupported = true;      // some rigs lack ParamMouthForm — skip silently after first failure
+  let hasReportedReady = false;
+  let overrideTickCount = 0;          // for diagnostics — bumped each time we apply mouth override
+  // Backup of the model's Idle motion definitions, stashed when we enter
+  // speaking so the motion manager can't auto-restart Idle (whose own
+  // ParamMouthOpenY keyframes fight our viseme-driven overrides). Restored
+  // on exit. Per-tick stopAllMotions was tried first and visibly glitched
+  // the body animation — clearing the definitions only at phase entry is
+  // surgical and lets one-shot motions still play.
+  let stashedIdleDefs = null;
+
+  // ---------- Caption ----------
+  const captionEl = document.getElementById("caption");
+  function setCaption(text) {
+    if (!text) { captionEl.classList.remove("visible"); captionEl.textContent = ""; return; }
+    captionEl.textContent = text;
+    captionEl.classList.add("visible");
+  }
+
+  // ---------- PIXI bootstrap ----------
+  function bootPixi() {
+    app = new PIXI.Application({
+      view: document.getElementById("stage"),
+      resizeTo: window,
+      backgroundAlpha: 0,
+      antialias: true,
+      autoDensity: true,
+      resolution: window.devicePixelRatio || 1,
+      // Live2D textures are stored without premultiplied alpha. Letting
+      // PIXI's WebGL context premultiply (the default) causes everything
+      // to render at a reduced apparent alpha when blended onto the
+      // transparent overlay — the model looks "faded" over HA. Setting
+      // this false makes the WebGL context treat texture alpha as-is.
+      premultipliedAlpha: false,
+    });
+    console.log("[avatar] PIXI booted | renderer:", app.renderer.type,
+      "| screen:", app.screen.width + "x" + app.screen.height,
+      "| canvas:", app.view.width + "x" + app.view.height,
+      "| window:", window.innerWidth + "x" + window.innerHeight,
+      "| DPR:", window.devicePixelRatio);
+  }
+
+  // ---------- Model load ----------
+  async function loadModel() {
+    try {
+      model = await PIXI.live2d.Live2DModel.from("models/hiyori/Hiyori.model3.json", { autoInteract: false });
+    } catch (e) {
+      bridge("onError", "model load failed: " + (e && e.message ? e.message : String(e)));
+      throw e;
+    }
+
+    app.stage.addChild(model);
+
+    // Bottom-anchored, scaled to ~80% of viewport height.
+    layoutModel();
+    window.addEventListener("resize", layoutModel);
+
+    // Idle motion (random from the Idle group). The model auto-loops idle
+    // when not driven by a manual motion.
+    if (model.internalModel.motionManager.definitions.Idle) {
+      model.motion("Idle");
+    }
+
+    // Tap interaction routes back to Kotlin (v1: optional; consumer wired
+    // in MainActivity if desired).
+    model.eventMode = "static";
+    model.cursor = "pointer";
+    model.on("pointertap", () => {
+      bridge("onTap");
+      // Small visual feedback: play TapBody motion if present.
+      if (model.internalModel.motionManager.definitions.TapBody) {
+        model.motion("TapBody");
+      }
+    });
+
+    // Override mouth parameters AFTER the motion has applied its keyframe
+    // values. We register on BOTH the model's afterMotionUpdate event AND
+    // a low-priority ticker callback so the override fires every frame even
+    // if no motion is currently playing (the event only fires inside the
+    // motion-manager update path).
+    model.on("afterMotionUpdate", applyParamOverrides);
+    app.ticker.add(applyParamOverrides, null, PIXI.UPDATE_PRIORITY.LOW);
+
+    if (!hasReportedReady) {
+      hasReportedReady = true;
+      bridge("onReady");
+    }
+  }
+
+  function layoutModel() {
+    if (!model || !app) return;
+    // Reset scale so model.height reflects intrinsic, then rescale.
+    model.scale.set(1);
+    const intrinsicH = model.height;
+    const screenH = app.screen.height;
+    const screenW = app.screen.width;
+    const targetH = screenH * 0.95;
+    const scale = intrinsicH > 0 ? targetH / intrinsicH : 0.5;
+    model.scale.set(scale);
+    model.anchor.set(0.5, 1.0);
+    model.x = screenW / 2;
+    model.y = screenH;
+    console.log("[avatar] layout | intrinsicH:", intrinsicH,
+      "| scale:", scale.toFixed(3),
+      "| pos:", model.x.toFixed(0) + "," + model.y.toFixed(0),
+      "| dims:", model.width.toFixed(0) + "x" + model.height.toFixed(0),
+      "| screen:", screenW + "x" + screenH);
+  }
+
+  function applyParamOverrides() {
+    if (!model) return;
+    const core = model.internalModel.coreModel;
+    if (currentPhase === "speaking") {
+      try { core.setParameterValueById("ParamMouthOpenY", mouthOpenY); } catch (e) { /* ignore */ }
+      if (mouthFormSupported) {
+        try { core.setParameterValueById("ParamMouthForm", mouthForm); }
+        catch (e) { mouthFormSupported = false; }
+      }
+    } else if (currentPhase === "listening" || currentPhase === "thinking" || currentPhase === "idle") {
+      // Mouth held closed when not speaking.
+      try { core.setParameterValueById("ParamMouthOpenY", 0); } catch (e) { /* ignore */ }
+    }
+    overrideTickCount++;
+  }
+
+  // ---------- Public API (window.AvatarApi) ----------
+  window.AvatarApi = {
+    setPhase(phase) {
+      if (!model) { currentPhase = phase; return; }
+      const prev = currentPhase;
+      currentPhase = phase;
+      if (phase !== "speaking") {
+        // Snap mouth back to closed when leaving speaking.
+        mouthOpenY = 0; mouthForm = 0;
+      }
+      const defs = model.internalModel.motionManager.definitions;
+      if (phase === "speaking" && prev !== "speaking") {
+        // Stash + clear the Idle definitions so the motion manager's
+        // auto-restart on motion-finish has nothing to play. Body parts
+        // driven by physics3.json (hair, etc.) keep moving; mouth is
+        // ours to drive without competing keyframes.
+        if (defs && defs.Idle) {
+          stashedIdleDefs = defs.Idle;
+          defs.Idle = undefined;
+        }
+        try { model.internalModel.motionManager.stopAllMotions(); } catch (e) { /* ignore */ }
+      } else if (phase !== "speaking" && prev === "speaking") {
+        if (stashedIdleDefs && defs) {
+          defs.Idle = stashedIdleDefs;
+          stashedIdleDefs = null;
+        }
+        if (defs && defs.Idle) {
+          model.motion("Idle");
+        }
+      }
+      // Phase-tied motion hints — kept soft (idle motions look natural across phases).
+      if (phase === "listening" && prev !== "listening") {
+        if (defs && defs.TapBody) {
+          model.motion("TapBody", 0, 2 /* NORMAL */);
+        }
+      }
+    },
+    setMouthShape(openY, form) {
+      const o = Number(openY); const f = Number(form);
+      mouthOpenY = isFinite(o) ? Math.max(0, Math.min(1, o)) : 0;
+      mouthForm  = isFinite(f) ? Math.max(-1, Math.min(1, f)) : 0;
+    },
+    setExpression(name) {
+      // v1: Hiyori sample has no exp3 files; record the requested expression
+      // so future custom rigs (and the v2 affect hook) can consume it.
+      currentExpression = String(name || "neutral");
+    },
+    setCaption(text) {
+      setCaption(text);
+    },
+    // Idle suppression — used during speaking phase to prevent idle motions
+    // from competing with viseme-driven mouth shapes; also handy for debug.
+    stopIdle() {
+      if (model) model.internalModel.motionManager.stopAllMotions();
+    },
+    resumeIdle() {
+      if (model && model.internalModel.motionManager.definitions.Idle) {
+        model.motion("Idle");
+      }
+    },
+    /**
+     * One-shot apply called from Kotlin's pushStateToJs. Single JS call
+     * per state update so we don't have to per-field-escape the caption
+     * through evaluateJavascript() — JSON is valid JS literal syntax so
+     * the Kotlin side can drop the result of kotlinx.serialization
+     * straight into the script body.
+     */
+    applyState(s) {
+      if (!s || typeof s !== "object") return;
+      if (typeof s.phase === "string") this.setPhase(s.phase);
+      if (typeof s.expression === "string") this.setExpression(s.expression);
+      if (typeof s.mouthOpenY === "number") {
+        this.setMouthShape(s.mouthOpenY, typeof s.mouthForm === "number" ? s.mouthForm : 0);
+      }
+      if ("caption" in s) this.setCaption(s.caption);
+    },
+    // Debug introspection only — not part of the Kotlin contract.
+    _debug: {
+      get model() { return model; },
+      get app() { return app; },
+      get phase() { return currentPhase; },
+      get mouth() { return { openY: mouthOpenY, form: mouthForm }; },
+      get overrideTicks() { return overrideTickCount; },
+      getParam(id) {
+        return model ? model.internalModel.coreModel.getParameterValueById(id) : null;
+      },
+      // Sample ParamMouthOpenY for ~1.5s at 50Hz so you can see whether
+      // our override is winning vs. being clobbered by the motion.
+      probe(durationMs) {
+        const samples = [];
+        const id = "ParamMouthOpenY";
+        const start = performance.now();
+        return new Promise((resolve) => {
+          const t = setInterval(() => {
+            samples.push(this.getParam(id));
+            if (performance.now() - start >= (durationMs || 1500)) {
+              clearInterval(t);
+              resolve(samples);
+            }
+          }, 30);
+        });
+      },
+    },
+  };
+
+  // ---------- Bootstrap ----------
+  try {
+    bootPixi();
+    loadModel().catch((e) => {
+      console.error("loadModel failed", e);
+    });
+  } catch (e) {
+    console.error("bootstrap failed", e);
+    bridge("onError", "bootstrap failed: " + (e && e.message ? e.message : String(e)));
+  }
+})();
+</script>
+</body>
+</html>

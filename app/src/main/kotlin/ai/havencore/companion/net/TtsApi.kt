@@ -1,5 +1,7 @@
 package ai.havencore.companion.net
 
+import ai.havencore.companion.voice.avatar.VisemeTimeline
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -17,7 +19,11 @@ private data class SpeakRequest(
     val speed: Float,
 )
 
-data class Spoken(val bytes: ByteArray, val contentType: String) {
+data class Spoken(
+    val bytes: ByteArray,
+    val contentType: String,
+    val visemes: VisemeTimeline? = null,
+) {
     // Equality on bytes is rarely useful and would copy on every call; override
     // to compare by reference / metadata only.
     override fun equals(other: Any?): Boolean =
@@ -67,7 +73,16 @@ class TtsApi(sharedClient: OkHttpClient) {
                 // libsndfile may downgrade mp3 -> wav silently; the response
                 // header is the source of truth for the actual codec.
                 val contentType = resp.header("Content-Type") ?: "audio/mpeg"
-                Spoken(bytes = bytes, contentType = contentType)
+                // Optional Rhubarb viseme timeline (server-side soft dep).
+                val rawHeader = resp.header("X-Visemes")
+                val visemes = rawHeader?.let(VisemeTimeline::fromBase64)
+                Log.i(
+                    "TtsApi",
+                    "speak ok: ${bytes.size}B $contentType, X-Visemes=" +
+                        (if (rawHeader == null) "absent"
+                        else "${rawHeader.length}B b64 → ${visemes?.mouthCues?.size ?: 0} cues"),
+                )
+                Spoken(bytes = bytes, contentType = contentType, visemes = visemes)
             }
         }
     }

@@ -10,6 +10,7 @@ import ai.havencore.companion.ui.components.Banner
 import ai.havencore.companion.ui.components.BannerSeverity
 import ai.havencore.companion.ui.theme.HavenTokens
 import ai.havencore.companion.voice.DefaultAssistantHelper
+import ai.havencore.companion.voice.avatar.OverlayPermHelper
 import ai.havencore.companion.wakeword.BatteryOptHelper
 import android.Manifest
 import android.content.Intent
@@ -90,6 +91,9 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
     val wallDisplayEnabled by vm.wallDisplayEnabled.collectAsState()
     val wakeWordThreshold by vm.wakeWordThreshold.collectAsState()
     val batteryOptIgnored by vm.isBatteryOptIgnored.collectAsState()
+    val avatarOverlayEnabled by vm.avatarOverlayEnabled.collectAsState()
+    val avatarIdleTimeoutMs by vm.avatarIdleTimeoutMs.collectAsState()
+    val overlayPermGranted by vm.isOverlayPermGranted.collectAsState()
 
     val ctx = LocalContext.current
 
@@ -174,6 +178,14 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                 batteryOptIgnored = batteryOptIgnored,
                 onRequestBatteryOpt = {
                     runCatching { ctx.startActivity(BatteryOptHelper.requestIntent(ctx)) }
+                },
+                avatarOverlayEnabled = avatarOverlayEnabled,
+                onAvatarOverlayEnabledChange = vm::setAvatarOverlayEnabled,
+                avatarIdleTimeoutMs = avatarIdleTimeoutMs,
+                onAvatarIdleTimeoutMsChange = vm::setAvatarIdleTimeoutMs,
+                overlayPermGranted = overlayPermGranted,
+                onRequestOverlayPerm = {
+                    runCatching { ctx.startActivity(OverlayPermHelper.requestIntent(ctx)) }
                 },
             )
 
@@ -507,6 +519,12 @@ private fun WallDisplayCard(
     onThresholdChange: (Float) -> Unit,
     batteryOptIgnored: Boolean,
     onRequestBatteryOpt: () -> Unit,
+    avatarOverlayEnabled: Boolean,
+    onAvatarOverlayEnabledChange: (Boolean) -> Unit,
+    avatarIdleTimeoutMs: Long,
+    onAvatarIdleTimeoutMsChange: (Long) -> Unit,
+    overlayPermGranted: Boolean,
+    onRequestOverlayPerm: () -> Unit,
 ) {
     SettingsCard(
         icon = Icons.Default.Tv,
@@ -550,6 +568,96 @@ private fun WallDisplayCard(
             ignored = batteryOptIgnored,
             onRequest = onRequestBatteryOpt,
         )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = HavenTokens.Spacing.sm),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.avatar_overlay_toggle),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Switch(
+                checked = avatarOverlayEnabled,
+                onCheckedChange = onAvatarOverlayEnabledChange,
+            )
+        }
+        Text(
+            text = stringResource(R.string.avatar_overlay_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        OverlayPermRow(
+            granted = overlayPermGranted,
+            onRequest = onRequestOverlayPerm,
+        )
+
+        var idleSliderMs by remember(avatarIdleTimeoutMs) {
+            mutableFloatStateOf(avatarIdleTimeoutMs.toFloat())
+        }
+        Text(
+            text = stringResource(R.string.avatar_idle_timeout_label) +
+                " %.1fs".format(idleSliderMs / 1000f),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        val idleMin = SettingsRepository.MIN_AVATAR_IDLE_TIMEOUT_MS.toFloat()
+        val idleMax = SettingsRepository.MAX_AVATAR_IDLE_TIMEOUT_MS.toFloat()
+        val idleStep = SettingsRepository.AVATAR_IDLE_TIMEOUT_STEP_MS
+        val idleSteps = (
+            (SettingsRepository.MAX_AVATAR_IDLE_TIMEOUT_MS -
+                SettingsRepository.MIN_AVATAR_IDLE_TIMEOUT_MS) / idleStep - 1
+        ).toInt()
+        Slider(
+            value = idleSliderMs,
+            onValueChange = { idleSliderMs = it },
+            onValueChangeFinished = { onAvatarIdleTimeoutMsChange(idleSliderMs.toLong()) },
+            valueRange = idleMin..idleMax,
+            steps = idleSteps,
+        )
+    }
+}
+
+@Composable
+private fun OverlayPermRow(
+    granted: Boolean,
+    onRequest: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = HavenTokens.Spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(HavenTokens.Spacing.md),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.overlay_perm_row_title),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = stringResource(
+                    if (granted) R.string.overlay_perm_row_body_on
+                    else R.string.overlay_perm_row_body_off,
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (granted) {
+            Text(
+                text = stringResource(R.string.overlay_perm_row_granted),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        } else {
+            Button(onClick = onRequest) {
+                Text(stringResource(R.string.overlay_perm_row_action))
+            }
+        }
     }
 }
 

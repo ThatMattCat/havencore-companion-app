@@ -16,6 +16,7 @@ import ai.havencore.companion.push.DeviceIdProvider
 import ai.havencore.companion.push.PushChannel
 import ai.havencore.companion.push.PushManager
 import ai.havencore.companion.push.PushNotifier
+import ai.havencore.companion.voice.avatar.VisemeScheduler
 import ai.havencore.companion.wakeword.WakeWordAutostart
 import ai.havencore.companion.wakeword.WakeWordChannel
 import android.app.Application
@@ -52,6 +53,7 @@ class AppContainer(ctx: Context) {
     val companionUploadApi = CompanionUploadApi(http)
     val mic = MicRecorder(ctx)
     val ttsPlayer = TtsPlayer(ctx)
+    val visemeScheduler = VisemeScheduler(ttsPlayer)
     val deviceActionDispatcher =
         DeviceActionDispatcher(appContext, settings, companionUploadApi)
 

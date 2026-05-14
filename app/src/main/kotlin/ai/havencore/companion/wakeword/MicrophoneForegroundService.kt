@@ -3,6 +3,7 @@ package ai.havencore.companion.wakeword
 import ai.havencore.companion.HavenCoreApp
 import ai.havencore.companion.MainActivity
 import ai.havencore.companion.R
+import ai.havencore.companion.voice.avatar.OverlayPermHelper
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
@@ -12,6 +13,7 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -22,6 +24,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.Locale
@@ -168,6 +171,33 @@ class MicrophoneForegroundService : Service() {
     }
 
     private fun launchChatWithCapture(file: File) {
+        // Avatar-overlay path takes precedence on installs that opted in
+        // (default-on for tablets) AND have the SYSTEM_ALERT_WINDOW grant.
+        // Without the grant we'd start a service whose overlay would
+        // silently no-op — fall back to the legacy MainActivity launch
+        // so the user still gets a turn.
+        val overlayWanted = runBlocking {
+            (applicationContext as HavenCoreApp).container.settings.avatarOverlayEnabled()
+        }
+        val overlayGranted = OverlayPermHelper.canDrawOverlays(applicationContext)
+        if (overlayWanted && overlayGranted) {
+            val svc = Intent(applicationContext, AvatarOverlayService::class.java)
+                .putExtra(AvatarOverlayService.EXTRA_CAPTURE_PATH, file.absolutePath)
+            runCatching {
+                ContextCompat.startForegroundService(applicationContext, svc)
+            }.onFailure {
+                Log.w(TAG, "startForegroundService(AvatarOverlayService) failed", it)
+                launchMainActivityWithCapture(file)
+            }
+            return
+        }
+        if (overlayWanted && !overlayGranted) {
+            Log.w(TAG, "avatar overlay enabled but SYSTEM_ALERT_WINDOW missing — falling back to MainActivity")
+        }
+        launchMainActivityWithCapture(file)
+    }
+
+    private fun launchMainActivityWithCapture(file: File) {
         val intent = Intent(applicationContext, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                 Intent.FLAG_ACTIVITY_CLEAR_TOP or

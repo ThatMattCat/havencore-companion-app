@@ -32,4 +32,17 @@
     <string name="battery_opt_row_body_on">Granted. The mic service can run unrestricted in the background.</string>
     <string name="battery_opt_row_action">Allow</string>
     <string name="battery_opt_row_granted">Granted</string>
+
+    <string name="avatar_overlay_toggle">Avatar overlay mode</string>
+    <string name="avatar_overlay_hint">On wake, float the Live2D avatar on top of whatever is on screen (Home Assistant by default). Turn off to keep the legacy fullscreen chat-screen popup.</string>
+
+    <string name="overlay_perm_row_title">Display over other apps</string>
+    <string name="overlay_perm_row_body_off">The avatar overlay needs system permission to draw on top of Home Assistant. Tap to open the system page and allow HavenCore.</string>
+    <string name="overlay_perm_row_body_on">Granted. HavenCore can float the avatar over any app.</string>
+    <string name="overlay_perm_row_action">Allow</string>
+    <string name="overlay_perm_row_granted">Granted</string>
+
+    <string name="avatar_idle_timeout_label">Avatar dismiss after</string>
+    <string name="avatar_overlay_notif_title">Selene avatar</string>
+    <string name="avatar_overlay_notif_text">Showing avatar overlay</string>
 </resources>
